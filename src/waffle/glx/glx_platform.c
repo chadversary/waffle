@@ -27,6 +27,7 @@
 
 #include "wcore_error.h"
 
+#include "linux_dl.h"
 #include "linux_platform.h"
 
 #include "glx_config.h"
@@ -55,6 +56,52 @@ glx_platform_destroy(struct wcore_platform *wc_self)
     return ok;
 }
 
+static bool
+glx_platform_get_glx_funcs(struct glx_platform *self)
+{
+    struct linux_dl *libGL;
+    bool ok = true;
+
+    libGL = linux_dl_open(WAFFLE_DL_OPENGL);
+    if (!libGL)
+        goto error;
+
+    if ((self->glXGetProcAddress = linux_dl_sym(libGL, "glXGetProcAddress")) == NULL)
+        goto error;
+    if ((self->glXQueryExtensionsString = linux_dl_sym(libGL, "glXQueryExtensionsString")) == NULL)
+        goto error;
+    if ((self->glXMakeCurrent = linux_dl_sym(libGL, "glXMakeCurrent")) == NULL)
+        goto error;
+    if ((self->glXSwapBuffers = linux_dl_sym(libGL, "glXSwapBuffers")) == NULL)
+        goto error;
+    if ((self->glXChooseFBConfig = linux_dl_sym(libGL, "glXChooseFBConfig")) == NULL)
+        goto error;
+    if ((self->glXCreateNewContext = linux_dl_sym(libGL, "glXCreateNewContext")) == NULL)
+        goto error;
+    if ((self->glXGetFBConfigAttrib = linux_dl_sym(libGL, "glXGetFBConfigAttrib")) == NULL)
+        goto error;
+    if ((self->glXGetVisualFromFBConfig = linux_dl_sym(libGL, "glXGetVisualFromFBConfig")) == NULL)
+        goto error;
+    if ((self->glXDestroyContext = linux_dl_sym(libGL, "glXDestroyContext")) == NULL)
+        goto error;
+
+    // Waffle doesn't require glXCreateContextAttribsARB, so don't fail if it's
+    // unavailable.
+    self->glXCreateContextAttribsARB = self->glXGetProcAddress((const uint8_t*) "glXCreateContextAttribsARB");
+
+    goto cleanup;
+
+error:
+    ok = false;
+    goto cleanup;
+
+cleanup:
+    if (libGL)
+        linux_dl_close(libGL);
+
+    return ok;
+}
+
 struct wcore_platform*
 glx_platform_create(void)
 {
@@ -73,7 +120,9 @@ glx_platform_create(void)
     if (!self->linux)
         goto error;
 
-    self->glXCreateContextAttribsARB = (PFNGLXCREATECONTEXTATTRIBSARBPROC) glXGetProcAddress((const uint8_t*) "glXCreateContextAttribsARB");
+    ok = glx_platform_get_glx_funcs(self);
+    if (!ok)
+        goto error;
 
     self->wcore.vtbl = &glx_platform_vtbl;
     return &self->wcore;
@@ -89,7 +138,8 @@ glx_platform_make_current(struct wcore_platform *wc_self,
                           struct wcore_window *wc_window,
                           struct wcore_context *wc_ctx)
 {
-    return wrapped_glXMakeCurrent(glx_display(wc_dpy)->x11.xlib,
+    return wrapped_glXMakeCurrent(glx_platform(wc_self),
+                                  glx_display(wc_dpy)->x11.xlib,
                                   wc_window ? glx_window(wc_window)->x11.xcb : 0,
                                   wc_ctx ? glx_context(wc_ctx)->glx : NULL);
 }
@@ -98,7 +148,8 @@ static void*
 glx_platform_get_proc_address(struct wcore_platform *wc_self,
                               const char *name)
 {
-    return glXGetProcAddress((const GLubyte*) name);
+    struct glx_platform *plat = glx_platform(wc_self);
+    return plat->glXGetProcAddress((const GLubyte*) name);
 }
 
 static bool

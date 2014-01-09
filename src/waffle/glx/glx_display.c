@@ -51,8 +51,8 @@ glx_display_destroy(struct wcore_display *wc_self)
 static bool
 glx_display_set_extensions(struct glx_display *self)
 {
-
-    const char *s = wrapped_glXQueryExtensionsString(self->x11.xlib,
+    struct glx_platform *plat = glx_platform(self->wcore.platform);
+    const char *s = wrapped_glXQueryExtensionsString(plat, self->x11.xlib,
                                                      self->x11.screen);
     if (!s) {
         wcore_errorf(WAFFLE_ERROR_UNKNOWN,

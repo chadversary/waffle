@@ -37,11 +37,50 @@
 
 struct linux_platform;
 
+/// Here we store function pointers for each GLX function used by Waffle.
+/// Waffle uses dlsym() to acquire the symbols rather than linking directly to
+/// libGL.
 struct glx_platform {
     struct wcore_platform wcore;
     struct linux_platform *linux;
 
-    PFNGLXCREATECONTEXTATTRIBSARBPROC glXCreateContextAttribsARB;
+    void*
+    (*glXGetProcAddress)(const GLubyte* name);
+
+    const char*
+    (*glXQueryExtensionsString)(Display *dpy, int screen);
+
+    Bool
+    (*glXMakeCurrent)(Display *dpy, GLXDrawable drawable, GLXContext ctx);
+
+    void
+    (*glXSwapBuffers)(Display *dpy, GLXDrawable drawable);
+
+    GLXFBConfig*
+    (*glXChooseFBConfig)(
+            Display *dpy, int screen,
+            const int *attribList, int *nitems);
+
+    GLXContext
+    (*glXCreateContextAttribsARB)(
+            Display *dpy, GLXFBConfig config,
+            GLXContext share_context, Bool direct, const int *attrib_list);
+
+    GLXContext
+    (*glXCreateNewContext)(
+            Display *dpy, GLXFBConfig config, int renderType,
+            GLXContext shareList, Bool direct);
+
+    int
+    (*glXGetFBConfigAttrib)(
+            Display *dpy, GLXFBConfig config,
+            int attribute, int *value);
+
+    XVisualInfo*
+    (*glXGetVisualFromFBConfig)(Display *dpy, GLXFBConfig config);
+
+    void
+    (*glXDestroyContext)(Display *dpy, GLXContext ctx);
 };
 
 DEFINE_CONTAINER_CAST_FUNC(glx_platform,

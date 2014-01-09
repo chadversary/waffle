@@ -98,10 +98,11 @@ glx_window_resize(struct wcore_window *wc_self,
 bool
 glx_window_swap_buffers(struct wcore_window *wc_self)
 {
+    struct glx_platform *plat = glx_platform(wc_self->display->platform);
     struct glx_window *self = glx_window(wc_self);
     struct glx_display *dpy = glx_display(wc_self->display);
 
-    wrapped_glXSwapBuffers(dpy->x11.xlib, self->x11.xcb);
+    wrapped_glXSwapBuffers(plat, dpy->x11.xlib, self->x11.xcb);
 
     return true;
 }

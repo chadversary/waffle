@@ -35,7 +35,6 @@ include_directories(
 set(waffle_libdeps
     ${egl_LDFLAGS}
     ${gbm_LDFLAGS}
-    ${gl_LDFLAGS}
     ${libudev_LDFLAGS}
     ${wayland-client_LDFLAGS}
     ${wayland-egl_LDFLAGS}
