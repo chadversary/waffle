@@ -1,32 +1,69 @@
-These notes are the template for the next release. They do not document
-an actual Waffle release.
-
-Waffle NEXT - (Date TBD)
+Waffle 1.4.0-rc1 (2014-09-06)
 =============================
 
-Waffle NEXT is now available. This release introduces a new wflinfo utility
-which creates an OpenGL or OpenGLES context and prints information about the
-context. Waffle is now also packaged for Debian. Details below.
+Waffle 1.4.0-rc1 is now available. This is a pre-release for 1.4.0.
 
-As usual, the release is available as a tarball
+As usual, the release is available as a tarball...
 
-    http://www.waffle-gl.org/files/release/waffle-NEXT/waffle-NEXT.tar.xz
-    http://www.waffle-gl.org/files/release/waffle-NEXT/waffle-NEXT.tar.xz.sig
+    http://www.waffle-gl.org/files/release/waffle-1.4.0-rc1/waffle-1.4.0-rc1.tar.xz
+    http://www.waffle-gl.org/files/release/waffle-1.4.0-rc1/waffle-1.4.0-rc1.tar.xz.sig
 
-Or as tag 'waffle-NEXT' in the git repository
+    waffle-1.4.0-rc1.tar.xz             TODO (sha256)
+    waffle-1.4.0-rc1.tar.xz.sig         TODO (sha256)
 
-    git://github.com/waffle-gl/waffle refs/tags/waffle-NEXT
+...and as a signed 'v1.4.0-rc1' tag in git:
 
-If you're using Archlinux, it's in the AUR as 'waffle'.
+    git://github.com/waffle-gl/waffle refs/tags/v1.4.0-rc1
 
-If you're using Debian, it should be available in the unstable sid release in
-in packages with names starting with 'libwaffle' and in the 'waffle-utils'
-package.
+Please file bugs and misc issues at:
+
+    https://github.com/waffle-gl/waffle/issues
+
+You can track the release in Waffle's snazzy new Github tracker:
+
+    https://github.com/waffle-gl/waffle/milestones
+
+
+It's been a loooooong time since the last release (Waffle 1.3.0 happened in
+2013!) and a lot has happened since then. Waffle now has a wflinfo utility,
+supports Linux DRM render nodes through the GBM backend, is packaged by several
+distributions, and has a proper issue tracker on Github.  The most prominent
+change, in my opinion, as that Waffle has more active contributors than last
+year (namely Jordan and Emil).
+
+Since I've been out of practice of making releases, the release candidate will
+cautiously bake for a full week before the final release.  If all goes
+smoothly, I plan to upload the final 1.4.0 tarballs on Monday 15 September.
+
+The next major release (2.0) will likely happen later this month.  Emil has
+been working hard to add Windows support to Waffle and Piglit, and that needs
+to be packaged up and shipped soon.
+
+
+Backwards compatibility notes
+-----------------------------
+Waffle 1.4.0 preserves ABI and API backwards-compatibility with Waffle 1.3.0.
+
 
 New Features
 ------------
-- [all platforms] A new wflinfo utility creates a context for the various
-  OpenGL API's supported by waffle and it will then print out some
-  information about the created context. See the documentation for wflinfo
-  in manpage wflinfo(1).
-- [linux] Waffle now has Debian packaging support.
+* All platforms
+
+    * wflinfo
+
+      The new 'wflinfo' utility reports information about the system's OpenGL
+      capabilities, similar to 'glxinfo'.  See the documentation at
+      [man:wflinfo.1] or [http://www.waffle-gl.org/man/wflinfo.1.html].
+
+* Linux
+
+    * GBM backend now supports DRM render nodes.
+
+      Waffle's GBM backend will use render nodes (/dev/dri/render*) if
+      available, and otherwise fallback to a DRI card device (/dev/dri/card*).
+
+    * Debian packaging support
+
+      Waffle now has Debian packaging support.  If you're using Debian, it
+      should be available in the unstable sid release in in packages with names
+      starting with 'libwaffle' and in the 'waffle-utils' package.

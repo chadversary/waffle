@@ -1,0 +1,13 @@
+#!/bin/bash
+
+ref_start="$1"
+ref_end="$2"
+ref_range="${ref_start}..${ref_end}"
+
+export GIT_PAGER=
+
+git log --format="%aE" ${ref_range} |
+while read -r email; do
+    #git diff --shortstat
+    #git log --use-mailmap --oneline --summary ${ref_range}
+done

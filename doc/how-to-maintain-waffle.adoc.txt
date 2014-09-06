@@ -1,0 +1,135 @@
+= How to maintain Waffle
+
+== Making a pre-release
+
+Pre-releases are tagged off the 'master' branch as 'vX.Y.0-rcN'.
+
+=== Checklist
+
+- Review the release notes in 'doc/release-notest/waffle-X.Y.0.txt'.
+
+- Setup the shell for business.
+
+  > work_tree="$(git rev-parse --show-toplevel)"
+  > git_dir="$(git rev-parse --git-dir)"
+  >
+  > X=...
+  > Y=...
+  > Z=0
+  > RC=... # examples: "-rc1", "-rc2"
+  >
+  > rel_tag="v$X.$Y.$Z$RC
+  > rel_name="waffle-$X.$Y.$Z$RC
+  >
+  > tmp_dir=$(mktemp -d)
+  > tarball=$tmp_dir/$rel_name.tar.xz
+  > src_dir=$tmp_dir/$rel_name
+  > prefix=$tmp_dir/prefix
+
+- Be on the 'master' branch.
+
+  > git checkout master
+
+- Is your git tree dirty? Really?
+
+  > git reset --hard
+  > git clean -xfd
+  > git status
+
+- Create a test tarball of 'master'.
+
+  > git archive --prefix="$rel_name/" | xz > $tarball
+
+- Inspect the tarball contents.
+
+  > tar -C $tmp_dir xf $tarball
+  > cd $src_dir
+  > find .
+
+- Verify on Linux that the tarball can build everything (all platforms, docs, examples, etc).
+
+  - You should test the build with the CMake generator that is most likely to
+    exhibit bugs and most likely to be chosen by the end user: that is,
+    CMake's Makefile generator. Don't use Ninja; it works too well.
+
+  > cd $src_dir
+  > cmake \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_INSTALL_PREFIX=$prefix \
+      \
+      -Dwaffle_has_glx=1 \
+      -Dwaffle_has_x11_egl=1 \
+      -Dwaffle_has_wayland=1 \
+      -Dwaffle_has_gbm=1 \
+      \
+      -Dwaffle_build_manpages=1 \
+      -Dwaffle_build_htmldocs=1 \
+      -Dwaffle_build_examples=1
+  > make -j4
+  > make check
+
+- Run all functional tests for all Linux platforms. --
+
+  My [chadv] preferred way to run the functional tests is to run them all in
+  one pass. To do that, I ...
+
+  - Enable render nodes by adding 'drm.rnodes=1' to the kernel cmdline. This
+    will permit the GBM tests to run even when another graphics client (such
+    as the X server) owns the DRI device.
+
+  - Boot and start X. This will permit the 'glx' and 'x11_egl' tests to run.
+
+  - Start Weston as a windowed X client. This will permit the 'wayland' tests
+    to run.
+
+    > weston
+
+  - Finally run the tests.
+
+    > cd $src_dir
+    > make check-func
+
+- Install and inspect the installation content.
+
+  > make -C $src_dir install
+  > find $prefix
+
+- Inspect the manpages and html docs.
+
+  > MANPATH=$prefix/share/man man waffle
+  > MANPATH=$prefix/share/man man wflinfo
+  > MANPATH=$prefix/share/man man waffle_config_choose
+  >
+  > $BROWSER $prefix/share/doc/waffle*/html/index.html
+
+- Verify that the examples build.
+
+  > make -C $prefix/share/doc/waffle*/examples
+
+- If you're feeling generous, verify that Piglit works when built and ran
+  against the waffle installed in '$prefix'.
+
+- If you have a Mac development environment, please test that too.  If you
+  don't, then ask someone on the mailing list to test the release candidate on
+  a Mac before the final release.
+
+- Same as previous bullet but s/Mac/Android/.
+
+- All looks good! Publish the signed git tag.
+
+  > cd $work_tree
+  > git tag -s $rel_tag
+  > git push origin master $rel_tag
+
+- Publish the tarball.
+
+  > TODO
+
+- Update the website.
+
+  > TODO
+
+- Announce the release candidate.
+
+  > $work_tree/dev/wfl-make-release-email "$rel_tag" > $tmp_dir/announce.eml
+  > sendmail -t < $tmp_dir/announce.eml
