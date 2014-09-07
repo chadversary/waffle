@@ -223,8 +223,63 @@ function parse_args {
     : ${arg_out_dir:=$(pwd)}
 }
 
+function wfl_get_git_info {
+    wfl_git_dir="$(git rev-parse --git-dir)"
+    wfl_git_work_tree="$(wfl_git rev-parse --show-toplevel)"
+    wfl_git_user_name="$(wfl_git config user.name)" || unset wfl_git_user_name
+    wfl_git_user_email="$(wfl_git config user.email)" || unset wfl_git_user_email
+}
 
-function wfl_make_rel_files {
+function wfl_get_rel_info {
+    wfl_rel_tag="$arg_tag"
+    wfl_rel_version="${wfl_rel_tag#v}"
+    wfl_rel_name="waffle-${wfl_rel_version}"
+    IFS='.-' read -r wfl_rel_major_version \
+                    wfl_rel_minor_version \
+                    wfl_rel_patch_version \
+                    wfl_rel_rc_version \
+                    <<< "$wfl_rel_version"
+    wfl_rel_rc_version="${wfl_rel_rc_version#rc}" # Strip 'rc' to get just the integer path.
+    wfl_rel_version_stable_part="${wfl_rel_major_version}.${wfl_rel_minor_version}.${wfl_rel_patch_version}"
+    wfl_rel_notes_path="$wfl_git_work_tree/doc/release-notes/waffle-${wfl_rel_version_stable_part}.txt"
+
+
+    if [[ -n "$wfl_rel_rc_version" ]]; then
+        wfl_rel_type='rc'
+    elif [[ "$wfl_patch_version" -eq 0 ]]; then
+        wfl_rel_type='feature'
+    else
+        wfl_rel_type='maintenance'
+    fi
+}
+
+function wfl_get_rel_basenames {
+    wfl_src_tar_basename="${wfl_rel_name}.tar"
+    wfl_src_tar_sign_basename="${wfl_src_tar_basename}.asc"
+    wfl_src_tar_xz_basename="${wfl_src_tar_basename}.xz"
+    wfl_sha256sums_basename="${wfl_rel_name}.sha256sums"
+    wfl_armored_sha256sums_basename="${wfl_sha256sums_basename}.asc"
+    wfl_rel_email_basename="${wfl_rel_name}.eml"
+}
+
+function wfl_get_rel_paths {
+    wfl_src_tar_path="$arg_out_dir/$wfl_src_tar_basename"
+    wfl_src_tar_xz_path="$arg_out_dir/$wfl_src_tar_xz_basename"
+    wfl_src_tar_sign_path="$arg_out_dir/$wfl_src_tar_sign_basename"
+    wfl_sha256sums_path="$arg_out_dir/$wfl_sha256sums_basename"
+    wfl_armored_sha256sums_path="$arg_out_dir/$wfl_armored_sha256sums_basename"
+    wfl_rel_email_path="$arg_out_dir/$wfl_rel_email_basename"
+|
+
+function wfl_get_rel_urls {
+    wfl_rel_base_url="http://www.waffle-gl.org/files/release/${wfl_rel_name}"
+    wfl_src_tar_xz_url="${wfl_rel_base_url}/${wfl_src_tar_xz_basename}"
+    wfl_src_tar_sign_url="${wfl_rel_base_url}/${wfl_src_tar_sign_basename}"
+    wfl_rel_email_url="${wfl_rel_base_url}/${wfl_rel_email_basename}"
+    wfl_sha256sums_url="${wfl_rel_base_url}/${wfl_sha256sums_basename}"
+}
+
+function wfl_make_rel_tarballs {
     wfl_git archive \
         --output="$wfl_src_tar_path" \
         --prefix="$wfl_rel_name/" \
@@ -237,51 +292,18 @@ function wfl_make_rel_files {
     wfl_gpg --armor "$wfl_sha256sums_path" > "$wfl_armored_sha256sums_path"
 }
 
-# Git info
-wfl_git_dir="$(git rev-parse --git-dir)"
-wfl_git_work_tree="$(wfl_git rev-parse --show-toplevel)"
-wfl_git_user_name="$(wfl_git config user.name)" || unset wfl_git_user_name
-wfl_git_user_email="$(wfl_git config user.email)" || unset wfl_git_user_email
+
+function wfl_make_rel_email {
+    
+}
+
+wfl_get_git_info
 
 parse_args "$@"
 
-# Release strings
-wfl_rel_tag="$arg_tag"
-wfl_rel_version="${wfl_rel_tag#v}"
-wfl_rel_version_stable_part="${wfl_rel_version%-*}"
-wfl_rel_name="waffle-${wfl_rel_version}"
-wfl_rel_notes_path="$wfl_git_work_tree/doc/release-notes/waffle-${wfl_rel_version_stable_part}.txt"
-IFS='.' read -r wfl_rel_major_version \
-                wfl_rel_minor_version \
-                wfl_rel_patch_version <<< "$wfl_rel_version"
+wfl_get_rel_info
+wfl_get_rel_paths
+wfl_get_rel_urls
 
-# Release files, basenames.
-wfl_src_tar_basename="${wfl_rel_name}.tar"
-wfl_src_tar_sign_basename="${wfl_src_tar_basename}.asc"
-wfl_src_tar_xz_basename="${wfl_src_tar_basename}.xz"
-wfl_sha256sums_basename="${wfl_rel_name}.sha256sums"
-wfl_armored_sha256sums_basename="${wfl_sha256sums_basename}.asc"
-wfl_rel_email_basename="${wfl_rel_name}.eml"
-
-# Release files, full paths.
-wfl_src_tar_path="$arg_out_dir/$wfl_src_tar_basename"
-wfl_src_tar_xz_path="$arg_out_dir/$wfl_src_tar_xz_basename"
-wfl_src_tar_sign_path="$arg_out_dir/$wfl_src_tar_sign_basename"
-wfl_sha256sums_path="$arg_out_dir/$wfl_sha256sums_basename"
-wfl_armored_sha256sums_path="$arg_out_dir/$wfl_armored_sha256sums_basename"
-wfl_rel_email_path="$arg_out_dir/$wfl_rel_email_basename"
-
-# Release urls
-wfl_rel_base_url="http://www.waffle-gl.org/files/release/${wfl_rel_name}"
-wfl_src_tar_xz_url="${wfl_rel_base_url}/${wfl_src_tar_xz_basename}"
-wfl_src_tar_sign_url="${wfl_rel_base_url}/${wfl_src_tar_sign_basename}"
-wfl_rel_email_url="${wfl_rel_base_url}/${wfl_rel_email_basename}"
-wfl_sha256sums_url="${wfl_rel_base_url}/${wfl_sha256sums_basename}"
-
-function cmd_make-release-files {
-    wfl_make_rel_files
-}
-
-function cmd_push-release-files {
-    wfl_push_rel_files
-}
+wfl_make_rel_tarballs
+wfl_make_rel_email
