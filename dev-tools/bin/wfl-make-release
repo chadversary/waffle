@@ -690,8 +690,6 @@ wfl_check_local_git_repos_are_clean
 wfl_pre_inspect_local_git
 wfl_web_pre_inspect_local_git
 
-
-
 # Next we begin writing to the git repos. Be nice, and provide cleanup hints on
 # abrupt failures.
 trap "{
