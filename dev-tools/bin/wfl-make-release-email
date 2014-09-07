@@ -17,7 +17,7 @@ function wfl_print_opt_spec {
 	--
 	  Required Arguments
 	t,tag=tag           The git tag to release.
-	
+
 	  Optional Arguments
 	h,help              Show this help message.
 	o,out-dir=out-dir   Default is current directory.
@@ -235,10 +235,6 @@ function wfl_make_rel_files {
     wfl_src_tar_xz_sha256="$(sha256sum "$wfl_src_tar_xz_path" | cut -f 1 -d ' ')"
     echo "$wfl_src_tar_xz_sha256  $wfl_src_tar_xz_basename" > "$wfl_sha256sums_path"
     wfl_gpg --armor "$wfl_sha256sums_path" > "$wfl_armored_sha256sums_path"
-}
-
-function wfl_push_rel_files {
-    
 }
 
 # Git info
