@@ -115,12 +115,12 @@ function wfl_print_release_email_body {
 
 function git_has_staged_changes {
     "$@" update-index -q --refresh
-    "$@" diff-index --quiet --cached HEAD
+    ! "$@" diff-index --quiet --cached HEAD
 }
 
 function git_has_unstaged_changes {
     "$@" update-index -q --refresh
-    "$@" diff-files --quiet
+    ! "$@" diff-files --quiet
 }
 
 function git_has_untracked_files {
@@ -135,9 +135,12 @@ function git_has_untracked_files {
 }
 
 function git_is_dirty {
+    git_has_staged_changes "$@" && echo "XXX 1"
+    git_has_unstaged_changes "$@" && echo "XXX 2"
+    git_has_untracked_files "$@" && echo "XXX 3"
     git_has_staged_changes "$@" ||
     git_has_unstaged_changes "$@" ||
-    git_has_untracked_files
+    git_has_untracked_files "$@"
 }
 
 function wfl_git {
