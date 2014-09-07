@@ -145,7 +145,7 @@ function wfl_git {
 }
 
 function wfl_web_git {
-    echo git --git-dir="$wfl_web_git_dir" --work-tree="$wfl_web_git_work_tree" "$@"
+    git --git-dir="$wfl_web_git_dir" --work-tree="$wfl_web_git_work_tree" "$@"
 }
 
 function wfl_gpg {
