@@ -349,7 +349,7 @@ function wfl_pre_inspect_local_git {
     fi
 
     if [[ ! -r "$wfl_release_notes_path" ]]; then
-        die "failed to release notes at $wfl_release_notes_path"
+        die "failed to read release notes file: $wfl_release_notes_path"
     fi
 
     if [[ "$(wfl_git log master..maint)" ]]; then
