@@ -679,10 +679,11 @@ function wfl_send_release_email {
 
 parse_args "$@"
 
+wfl_get_git_info
+
 wfl_get_release_info
 wfl_get_release_paths
 wfl_get_release_urls
-wfl_get_git_info
 
 wfl_check_local_git_repos_are_clean
 wfl_pre_inspect_local_git
