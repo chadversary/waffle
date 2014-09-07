@@ -135,9 +135,6 @@ function git_has_untracked_files {
 }
 
 function git_is_dirty {
-    git_has_staged_changes "$@" && echo "XXX 1"
-    git_has_unstaged_changes "$@" && echo "XXX 2"
-    git_has_untracked_files "$@" && echo "XXX 3"
     git_has_staged_changes "$@" ||
     git_has_unstaged_changes "$@" ||
     git_has_untracked_files "$@"
@@ -148,7 +145,7 @@ function wfl_git {
 }
 
 function wfl_web_git {
-    git --git-dir="$wfl_web_git_dir" --work-tree="$wfl_web_git_work_tree" "$@"
+    echo git --git-dir="$wfl_web_git_dir" --work-tree="$wfl_web_git_work_tree" "$@"
 }
 
 function wfl_gpg {
