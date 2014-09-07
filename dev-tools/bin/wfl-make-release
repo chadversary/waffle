@@ -357,12 +357,12 @@ function wfl_pre_inspect_local_git {
     fi
 
     if wfl_prompt_yes_no "Review the waffle git log?"; then
-        wfl_git log --graph --decorate --stat | less
+        ! wfl_git log --graph --decorate --stat | less
         wfl_prompt_yes_no "Does the waffle git log look good?"
     fi
 
     if wfl_prompt_yes_no "Review the release notes?"; then
-        $wfl_git_editor "$wfl_release_notes_path"
+        ! $wfl_git_editor "$wfl_release_notes_path"
         wfl_prompt_yes_no "Do the raw release notes look good?"
     fi
 }
