@@ -17,6 +17,7 @@ function wfl_print_opt_spec {
 	--
 	  Required Arguments
 	t,tag=tag           The git tag to release.
+	web-git-dir=        The git dir for Waffle's website.
 
 	  Optional Arguments
 	h,help              Show this help message.
@@ -270,9 +271,17 @@ function parse_args {
                 if [[ -v arg_sendmail_cmd ]]; then
                     usage_error 'multiple occurences of <sendmail-cmd>'
                 fi
-                arg_sendmail_cmd="$1"
-                shift 1
+                arg_sendmail_cmd="$2"
+                shift 2
                 ;;
+            --web-git-dir)
+                if [[ -v arg_web_git_dir ]]; then
+                    usage_error 'multiple occurences of <web-git-dir>'
+                fi
+                arg_web_git_dir="$2"
+                shift 2
+                ;;
+            
             *)
                 internal_error
                 ;;
@@ -287,12 +296,19 @@ function parse_args {
         usage_error "missing required argument <tag>"
     fi
 
+    if [[ ! -v arg_web_git_dir ]]; then
+        usage_error "missing required argument <web-git-dir>"
+    fi
+
     if ! [[ "$arg_tag" =~ v[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+(-rc[[:digit:]]+)?$ ]]; then
         usage_error "argument tag='$arg_tag' does not look like a version tag"
     fi
 
-    if [[ -v arg_from ]]; then
-        :
+    if ! [[ -v arg_from ]]; then
+        local wfl_git_user_name=
+        local wfl_git_user_email=
+        wfl_git_user_name="$(wfl_git config user.name)" || unset wfl_git_user_name
+        wfl_git_user_email="$(wfl_git config user.email)" || unset wfl_git_user_email
     elif [[ -v wfl_git_user_name && -v wfl_git_user_email ]]; then
         arg_from="$wfl_git_user_name <$wfl_git_user_email>"
     elif [[ -v wfl_git_user_email ]]; then
@@ -350,13 +366,11 @@ function wfl_web_pre_inspect_local_git {
 
 function wfl_get_git_info {
     wfl_git_dir="$(git rev-parse --git-dir)"
-    wfl_git_work_tree="$(wfl_git rev-parse --show-toplevel)"
+    wfl_git_work_tree="$(git rev-parse --show-toplevel)"
     wfl_git_editor="$(wfl_git var GIT_EDITOR)"
-    wfl_git_user_name="$(wfl_git config user.name)" || unset wfl_git_user_name
-    wfl_git_user_email="$(wfl_git config user.email)" || unset wfl_git_user_email
 
     wfl_web_git_dir="$arg_web_git_dir"
-    wfl_web_git_work_tree="$(wfl_web_git rev-parse --show-toplevel)"
+    wfl_web_git_work_tree="$(git --git-dir="$wfl_web_git_dir" rev-parse --show-toplevel)"
 }
 
 function wfl_get_rel_info {
@@ -402,7 +416,7 @@ function wfl_get_rel_paths {
     wfl_tmp_src_dir="$tmp_dir/$wfl_rel_name"
     wfl_tmp_build_dir="$wfl_tmp_src_dir"
     wfl_tmp_prefix="$tmp_dir/prefix"
-|
+}
 
 function wfl_get_rel_urls {
     wfl_release_tracker_url="https://github.com/waffle-gl/waffle/milestones"
@@ -579,8 +593,8 @@ function wfl_update_remote_git {
                 maint_versioned_sha1=$(wfl_git rev-parse $maint_versioned_branch --)
             fi
 
-            if [[ "$maint_versioned_sha1" = "$wfl_rel_tag_sha1" ]]; then
-               wfl_prompt_yes_no "Push branch '$maint_versioned_branch' to 'origin'?"; then
+            if [[ "$maint_versioned_sha1" = "$wfl_rel_tag_sha1" ]] \
+               && wfl_prompt_yes_no "Push branch '$maint_versioned_branch' to 'origin'?"; then
                refs_to_push+=("$maint_versioned_branch")
             fi
             ;;
@@ -636,9 +650,8 @@ function wfl_send_release_email {
     $sendmail_cmd < "$wfl_rel_email_path"
 }
 
-wfl_get_git_info
-
 parse_args "$@"
+wfl_get_git_info
 
 wfl_check_local_git_repos_are_clean
 wfl_pre_inspect_local_git
