@@ -1,0 +1,200 @@
+#!/bin/bash
+
+: ${wfl_debug:=0}
+if [[ "${#wfl_debug}" -gt 0 && "$wfl_debug" != 0 ]]; then
+    set -vx
+fi
+
+set -o errexit
+set -o nounset
+set -o pipefail
+
+prog="${0##*/}"
+
+opt_spec="\
+$prog [-h|--help] <args>
+--
+  Required Arguments
+t,tag=tag           The git tag to release.
+
+  Optional Arguments
+h,help              Show this help message.
+o,out-dir=out-dir   Default is current directory.
+from=email          The value for the From: header. Defaults to \"user.name <user.email>\" from git-config.
+cc=email            Add a Cc: header. May occur multiple times.
+S,gpg-key=keyid     Specify non-default GPG signing key.
+gpg-opt=opt         Pass <opt> to gpg(1). May occur multiple times.
+"
+
+unset explode
+
+function die {
+    printf '%s: error' "$prog"
+    if [[ $# -ne 0 ]]; then
+        printf ': %s' "$@"
+    fi
+    printf '\n'
+
+    exit 1
+}
+
+function usage_error {
+    echo "usage error: $@"
+    parse_args --help
+}
+
+function parse_args {
+    arg_cc=('')
+    arg_gpg_opt=('')
+
+    eval "$(echo "$opt_spec" | git rev-parse --parseopt -- "$@" || echo "exit $?")"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --)
+                shift
+                break
+                ;;
+            --cc)
+                arg_cc+="$2"
+                shift 2
+                ;;
+            -t|--tag)
+                if [[ -v arg_tag ]]; then
+                    usage_error 'multiple occurences of argument <tag>'
+                fi
+                arg_tag="$2"
+                shift 2
+                ;;
+            --from)
+                if [[ -v arg_from ]]; then
+                    usage_error 'multiple occurences of argument <from>'
+                fi
+                arg_from="$2"
+                shift 2
+                ;;
+            --gpg-opt)
+                arg_gpg_opt+="$2"
+                shift 2
+                ;;
+            -S|--gpg-key)
+                if [[ -v arg_keyid ]]; then
+                    usage_error 'multiple occurences of argument <keyid>'
+                fi
+                arg_keyid="$2"
+                shift 2
+                ;;
+            -o|--out-dir)
+                if [[ -v arg_out_dir ]]; then
+                    usage_error 'multiple occurences of argument <out-dir>'
+                fi
+                arg_out_dir="$2"
+                shift 2
+                ;;
+            *)
+                internal_error
+                ;;
+        esac
+    done
+
+    if [[ $# -ne 0 ]]; then
+        usage_error "trailing args: $@"
+    fi
+
+    if [[ ! -v arg_tag ]]; then
+        usage_error "missing required argument <tag>"
+    fi
+
+    if ! [[ "$arg_tag" =~ v[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+(-rc[[:digit:]]+)?$ ]]; then
+        usage_error "argument tag='$arg_tag' does not look like a version tag"
+    fi
+
+    if [[ -v arg_from ]]; then
+        :
+    elif [[ -v git_user_name && -v git_user_email ]]; then
+        arg_from="$git_user_name <$git_user_email>"
+    elif [[ -v git_user_email ]]; then
+        arg_from="$git_user_email"
+    elif [[ -v EMAIL ]]; then
+        arg_from="$EMAIL"
+    else
+        usage_error 'if argument <from> is missing, then either user.email' \
+                    'in the git config or the environment variable EMAIL' \
+                    'must be set'
+    fi
+
+    # Remove dummy head elements.
+    arg_cc=("${arg_cc[@]:2}")
+    arg_gpg_opt=("${arg_gpg_opt[@]:2}")
+
+    : ${arg_out_dir:=$(pwd)}
+}
+
+function wfl_gpg {
+    local gpg_cmd=(gpg)
+
+    if [[ -v arg_keyid ]]; then
+        gpg_cmd+=(--default-key "$arg_keyid")
+    fi
+    if [[ ${#arg_gpg_opt[@]} -ne 0 ]]; then
+        gpg_cmd+=("${arg_gpg_opt[@]}")
+    fi
+
+    "${gpg_cmd[@]}" "$@"
+}
+
+function wfl_make_tarball {
+    local junk=
+
+    git archive --prefix="$wfl_rel_name/" "$arg_tag" | xz > "$wfl_tarball_path"
+    (
+        #  Make signature and checksum files for tarball.
+        cd "$arg_out_dir"
+        sha256sum "$(basename "$wfl_tarball_path")" > "$(basename "$wfl_tarball_sha256_path")"
+    )
+    read -r wfl_tarball_sha256 junk < "$wfl_tarball_sha256_path"
+    wfl_gpg --detach-sign < "$wfl_tarball_path" > "$wfl_tarball_sig_path"
+}
+
+function wfl_make_email {
+    <"$wfl_rel_notes_path" awk "
+        BEGIN {
+            print \"From: $arg_from\";
+        }
+    "
+    #printf 'From: %s\n' "$arg_from"
+    #printf 'To: waffle@lists.freedesktop.org\n'
+    #if [[ ${#arg_cc[@]} -ne 0 ]]; then
+    #    printf 'Cc: %s\n' "${arg_cc[@]}"
+    #fi
+    #printf 'Subject: [ANNOUNCE] Waffle %s\n' "$wfl_version"
+
+    #printf '\n'
+
+    #sed --regexp-extended --e "
+    #    s/^\s*(TODO(sha256sum)  $wfl_tarball_basename$/
+
+
+    #gpg "${arg_gpg_opt[@]}" --clearsign < "$wfl_rel_notes_path"
+}
+
+git_user_name="$(git config user.name)" || unset git_user_name
+git_user_email="$(git config user.email)" || unset git_user_email
+
+parse_args "$@"
+
+wfl_work_tree="$(git rev-parse --show-toplevel)"
+wfl_full_version="${arg_tag#v}"
+wfl_stable_version="${wfl_full_version%-*}"
+wfl_rel_name="waffle-${wfl_full_version}"
+wfl_rel_notes_path="$wfl_work_tree/doc/release-notes/waffle-${wfl_stable_version}.txt"
+wfl_tarball_basename="${wfl_rel_name}.tar.xz"
+wfl_tarball_path="${arg_out_dir}/${wfl_tarball_basename}"
+wfl_tarball_sig_path="${wfl_tarball_path}.sig"
+wfl_tarball_sha256_path="${wfl_tarball_path}.sha256sum"
+wfl_announce_email_path="${arg_out_dir}/${wfl_rel_name}.eml"
+
+wfl_make_tarball
+wfl_make_email
+
+# vim:expandtab shiftwidth=4 tabstop=4 textwidth=80:
