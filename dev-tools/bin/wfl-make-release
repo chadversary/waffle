@@ -180,15 +180,12 @@ function usage_error {
 function wfl_prompt_yes_no {
     while true; do
         declare -l choice=
-
         read -r -n1 -p "> $@ [Y/n] " choice
-        if ! [[ "$choice" ]]; then
-            choice="y"
-        fi
 
         case "$choice" in
-            y) return 0;;
-            n) return 1;;
+            $'\n') return 0;;
+            y) echo; return 0;;
+            n) echo; return 1;;
             *) continue;;
         esac
     done
@@ -349,6 +346,10 @@ function wfl_check_local_git_repos_are_clean {
 function wfl_pre_inspect_local_git {
     if wfl_git rev-parse --verify $wfl_release_tag; then
         die "tag '$wfl_release_tag' already exists in $wfl_git_dir"
+    fi
+
+    if [[ ! -r "$wfl_release_notes_path" ]]; then
+        die "failed to release notes at $wfl_release_notes_path"
     fi
 
     if [[ "$(wfl_git log master..maint)" ]]; then
