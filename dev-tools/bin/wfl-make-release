@@ -305,14 +305,14 @@ function parse_args {
     fi
 
     if ! [[ -v arg_from ]]; then
-        local wfl_git_user_name=
-        local wfl_git_user_email=
-        wfl_git_user_name="$(wfl_git config user.name)" || unset wfl_git_user_name
-        wfl_git_user_email="$(wfl_git config user.email)" || unset wfl_git_user_email
-    elif [[ -v wfl_git_user_name && -v wfl_git_user_email ]]; then
-        arg_from="$wfl_git_user_name <$wfl_git_user_email>"
-    elif [[ -v wfl_git_user_email ]]; then
-        arg_from="$wfl_git_user_email"
+        local git_user_name=
+        local git_user_email=
+        git_user_name="$(git config user.name)" || unset git_user_name
+        git_user_email="$(git config user.email)" || unset git_user_email
+    elif [[ -v git_user_name && -v git_user_email ]]; then
+        arg_from="$git_user_name <$git_user_email>"
+    elif [[ -v git_user_email ]]; then
+        arg_from="$git_user_email"
     elif [[ -v EMAIL ]]; then
         arg_from="$EMAIL"
     else
@@ -347,29 +347,53 @@ function wfl_check_local_git_repos_are_clean {
 }
 
 function wfl_pre_inspect_local_git {
+    if wfl_git rev-parse --verify $wfl_release_tag; then
+        die "tag '$wfl_release_tag' already exists in $wfl_git_dir"
+    fi
+
     if [[ "$(wfl_git log master..maint)" ]]; then
         die "The 'master' branch is not a superset of 'maint'." \
             "Checkout 'master', merge 'maint' into it, and try again."
     fi
 
-    wfl_git log --graph --decorate --stat | less
-    wfl_prompt_yes_no "Does the waffle git look good?"
+    if wfl_prompt_yes_no "Review the waffle git log?"; then
+        wfl_git log --graph --decorate --stat | less
+        wfl_prompt_yes_no "Does the waffle git log look good?"
+    fi
 
-    $wfl_git_editor "$wfl_release_notes_path"
-    wfl_prompt_yes_no "Do the raw release notes look good?"
+    if wfl_prompt_yes_no "Review the release notes?"; then
+        $wfl_git_editor "$wfl_release_notes_path"
+        wfl_prompt_yes_no "Do the raw release notes look good?"
+    fi
 }
 
 function wfl_web_pre_inspect_local_git {
-    wfl_git log --graph --decorate --stat | less
-    wfl_prompt_yes_no "Does the waffle-web git log look good?"
+    if wfl_web_git rev-parse --verify $wfl_release_tag; then
+        die "tag '$wfl_release_tag' already exists in $wfl_web_git_dir"
+    fi
+
+    if wfl_prompt_yes_no "Review the waffle-web git log?"; then
+        wfl_git log --graph --decorate --stat | less
+        wfl_prompt_yes_no "Does the waffle-web git log look good?"
+    fi
+}
+
+function wfl_abspath {
+    if [[ "$1" = /* ]]; then
+        echo "$1"
+    elif [[ "$1" = . || . = ./ ]]; then
+        echo "$PWD"
+    else
+        echo "$PWD/$1"
+    fi
 }
 
 function wfl_get_git_info {
-    wfl_git_dir="$(git rev-parse --git-dir)"
+    wfl_git_dir="$(wfl_abspath "$(git rev-parse --git-dir)")"
     wfl_git_work_tree="$(git rev-parse --show-toplevel)"
     wfl_git_editor="$(wfl_git var GIT_EDITOR)"
 
-    wfl_web_git_dir="$arg_web_git_dir"
+    wfl_web_git_dir="$(wfl_abspath "$arg_web_git_dir")"
     wfl_web_git_work_tree="$(git --git-dir="$wfl_web_git_dir" rev-parse --show-toplevel)"
 }
 
@@ -564,8 +588,6 @@ function wfl_web_update_local_git {
 function wfl_update_remote_git {
     local refs_to_push=('')
 
-    wfl_git log --stat --patch "${old_head}..HEAD" | less
-
     if wfl_prompt_yes_no "Push tag '$wfl_release_tag' to remote 'origin'?"; then
         refs_to_push+=($wfl_release_tag)
     fi
@@ -581,16 +603,23 @@ function wfl_update_remote_git {
             local maint_versioned_branch="maint-${wfl_release_major_version}.${wfl_release_minor_version}"
             local maint_versioned_sha1=
                 
-            if ! maint_sha1=$(wfl_git rev-parse maint --) \
-               && wfl_prompt_yes_no "Create local branch 'maint' from tag '$wfl_release_tag'?"; then
+            if main_sha1=$(wfl_git rev-parse --verify maint); then
+                :
+            elif wfl_prompt_yes_no "Create local branch 'maint' from tag '$wfl_release_tag'?"; then
                 wfl_git branch maint $wfl_release_tag
-                maint_sha1=$(wfl_git rev-parse maint --)
+                maint_sha1=$(wfl_git rev-parse --verify maint) 
             fi
 
-            if ! maint_versioned_sha1=$(wfl_git rev-parse $maint_versioned_branch --) \
-               && wfl_prompt_yes_no "Create local branch '$maint_versioned_branch' from tag '$wfl_release_tag'?"; then
+            if [[ "$maint_sha1" = "$wfl_release_tag_sha1" ]] \
+               && wfl_prompt_yes_no "Push branch 'maint' to 'origin'?"; then
+               refs_to_push+=('maint')
+            fi
+
+            if maint_versioned_sha1=$(wfl_git rev-parse --verify $maint_versioned_branch); then
+                :
+            elif wfl_prompt_yes_no "Create local branch '$maint_versioned_branch' from tag '$wfl_release_tag'?"; then
                 wfl_git branch $maint_versioned_branch $wfl_release_tag
-                maint_versioned_sha1=$(wfl_git rev-parse $maint_versioned_branch --)
+                maint_versioned_sha1=$(wfl_git rev-parse --verify $maint_versioned_branch)
             fi
 
             if [[ "$maint_versioned_sha1" = "$wfl_release_tag_sha1" ]] \
@@ -607,14 +636,12 @@ function wfl_update_remote_git {
     refs_to_push="${refs_to_push[@]:1}"
 
     if [[ ${#refs_to_push[@]} -gt 0 ]]; then
-        wfl_git push "origin" "${refs_to_push[@]}"
+        wfl_git push origin "${refs_to_push[@]}"
     fi
 }
 
 function wfl_web_update_remote_git {
     local refs_to_push=('')
-
-    wfl_web_git log --stat --patch "${old_head}..HEAD" | less
 
     if wfl_prompt_yes_no "Push tag '$wfl_release_tag' to remote 'origin'?"; then
         refs_to_push+=($wfl_release_tag)
