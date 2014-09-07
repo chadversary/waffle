@@ -11,74 +11,119 @@ set -o pipefail
 
 declare -r prog="${0##*/}"
 
-declare -r opt_spec="\
-$prog [-h|--help] <args>
---
-  Required Arguments
-t,tag=tag           The git tag to release.
+function wfl_print_opt_spec {
+    cat <<-EOF
+	$prog [-h|--help] <args>
+	--
+	  Required Arguments
+	t,tag=tag           The git tag to release.
+	
+	  Optional Arguments
+	h,help              Show this help message.
+	o,out-dir=out-dir   Default is current directory.
+	from=email          The value for the From: header. Defaults to "user.name <user.email>" from git-config.
+	cc=email            Add a Cc: header. May occur multiple times.
+	S,gpg-key=keyid     Specify non-default GPG signing key.
+	gpg-opt=opt         Pass <opt> to gpg(1). May occur multiple times.
+	EOF
+}
 
-  Optional Arguments
-h,help              Show this help message.
-o,out-dir=out-dir   Default is current directory.
-from=email          The value for the From: header. Defaults to \"user.name <user.email>\" from git-config.
-cc=email            Add a Cc: header. May occur multiple times.
-S,gpg-key=keyid     Specify non-default GPG signing key.
-gpg-opt=opt         Pass <opt> to gpg(1). May occur multiple times.
-"
+function wfl_print_release_email_header {
+    cat <<-EOF
+	Subject: [ANNOUNCE] Waffle $wfl_rel_version
+	From: $arg_from
+	To: waffle@lists.freedesktop.org
+	EOF
 
-declare -r wfl_rel_email_common_template="\
-Tarballs and other release files are found at
+    if [[ ${#arg_cc[@]} -gt 0 ]]; then
+        printf 'Cc: %s\n' "${arg_cc[@]}"
+    fi
+}
 
-    %{wfl_src_tar_xz_url}  SHA-256 %{wfl_src_tar_xz_sha256}
-    %{wfl_src_tar_sign_url}
-    %{wfl_sha256sums_url}
+function wfl_print_release_email_body_common {
+    cat <<-EOF
+	Tarballs and other release files are published at"
 
-The signed git tag '%{wfl_rel_tag}' is published in 
+	    ${wfl_src_tar_xz_url}  SHA-256 ${wfl_src_tar_xz_sha256}"
+	    ${wfl_src_tar_sign_url}"
+	    ${wfl_armored_sha256sums_url}"
 
-    git://github.com/waffle-gl/waffle
-    http://github.com/waffle-gl/waffle
-    https://github.com/waffle-gl/waffle
+	The signed git tag '${wfl_rel_tag}' is published in "
 
-Commit history for this release can be viewed at
+	    git://github.com/waffle-gl/waffle"
+	    http://github.com/waffle-gl/waffle"
+	    https://github.com/waffle-gl/waffle"
 
-    https://github.com/waffle-gl/waffle/commits/refs/tags/%{wfl_rel_tag}
+	You can verify the release files by:"
 
-Please file bugs and other issues at
+	    Verifying the tarball's signature:"
+	    xz -d ${wfl_src_tar_xz_basename} | gpg --verify ${wfl_src_tar_sign_basename}"
 
-    https://github.com/waffle-gl/waffle/issues
+	    Verifying the tag's signature:"
+	    git tag --verify ${wfl_rel_tag}"
 
-You can track the release status at
+	    Verifying the tarball's checksum (least secure method):"
+	    echo '${wfl_src_tar_xz_sha256}  ${wfl_src_tar_xz_basename}' | sha256sum -c"
+	    "
+	Please file bugs and other issues at"
 
-    https://github.com/waffle-gl/waffle/milestones
-"
+	    https://github.com/waffle-gl/waffle/issues"
 
-readonly wfl_release_email_rc_template="\
-A release candidate Waffle %{wfl_rel_version} is now available for testing.
+	You can view the commit history for this release at"
 
-$wfl_release_email_common_template
-"
+	    https://github.com/waffle-gl/waffle/commits/refs/tags/${wfl_rel_tag}"
 
-readonly wfl_release_email_rc_template="\
-A release candidate Waffle %{wfl_rel_version} is now available for testing.
+	You can track the release status at"
 
-$wfl_release_email_common_template
-"
+	    https://github.com/waffle-gl/waffle/milestones"
+	EOF
+}
 
-readonly wfl_release_email_major_template="\
-The feature release Waffle %{wfl_rel_version} is now available.
+function wfl_print_rc_release_email_{
+    echo "A release candidate Waffle ${wfl_rel_version} is now available for testing."
+    echo
+    wfl_print_release_email_body_common
+}
 
-$wfl_release_email_common_template
-"
+function wfl_print_feature_release_email {
+    echo "The feature release Waffle ${wfl_rel_version} is now available."
+    echo
+    wfl_print_release_email_body_common
+}
 
-readonly wfl_release_email_maint_template="\
-The maintenance release Waffle %{wfl_rel_version} is now available.
+function wfl_print_maintenance_release_email {
+    local prev_version="${wfl_rel_major_version}.${wfl_rel_minor_version}.$((wfl_rel_patch_version - 1))"
 
-$wfl_release_email_common_template
-"
+    cat <<-EOF
+	A maintenance release Waffle ${wfl_rel_version} is now available. This
+	release fixes issues since Waffle ${prev_version}.
+
+	EOF
+
+    wfl_print_release_email_body_common
+}
+
+function wfl_git {
+    git --git-dir="$wfl_git_dir" "$@"
+}
+
+function wfl_gpg {
+    local gpg_cmd=(gpg2 --digest-algo SHA256)
+
+    if [[ -v arg_keyid ]]; then
+        gpg_cmd+=(--default-key "$arg_keyid")
+    fi
+
+    if [[ ${#arg_gpg_opt[@]} -gt 0 ]]; then
+        gpg_cmd+=("${arg_gpg_opt[@]}")
+    fi
+
+    "${gpg_cmd[@]}" "$@"
+}
 
 function die {
     printf '%s: error' "$prog"
-    if [[ $# -ne 0 ]]; then
+    if [[ $# -gt 0 ]]; then
         printf ': %s' "$@"
     fi
     printf '\n'
@@ -95,7 +140,7 @@ function parse_args {
     arg_cc=('')
     arg_gpg_opt=('')
 
-    eval "$(echo "$opt_spec" | git rev-parse --parseopt -- "$@" || echo "exit $?")"
+    eval "$(wfl_print_opt_spec | git rev-parse --parseopt -- "$@" || echo "exit $?")"
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -145,7 +190,7 @@ function parse_args {
         esac
     done
 
-    if [[ $# -ne 0 ]]; then
+    if [[ $# -gt 0 ]]; then
         usage_error "trailing args: $@"
     fi
 
@@ -175,105 +220,25 @@ function parse_args {
     arg_cc=("${arg_cc[@]:1}")
     arg_gpg_opt=("${arg_gpg_opt[@]:1}")
 
-    printf "XXX%sXXX\n" "${arg_cc[@]}"
-
     : ${arg_out_dir:=$(pwd)}
 }
 
-function wfl_git {
-    git --git-dir="$wfl_git_dir" "$@"
-}
-
-function wfl_gpg {
-    local gpg_cmd=(gpg2 --digest-algo SHA256)
-
-    if [[ -v arg_keyid ]]; then
-        gpg_cmd+=(--default-key "$arg_keyid")
-    fi
-    if [[ ${#arg_gpg_opt[@]} -ne 0 ]]; then
-        gpg_cmd+=("${arg_gpg_opt[@]}")
-    fi
-
-    "${gpg_cmd[@]}" "$@"
-}
 
 function wfl_make_rel_files {
-# Release files
-wfl_src_archive_prefix="${wfl_rel_name}/"
-wfl_src_tar_xz_basename="${wfl_rel_name}.tar.xz"
-wfl_src_tar_xz_sig_basename="${wfl_src_tar_xz_basename}.asc"
-wfl_announce_basename="${wfl_rel_name}.eml"
-wfl_sha256sums_basename="${wfl_rel_name}.sha256sums"
+    wfl_git archive \
+        --output="$wfl_src_tar_path" \
+        --prefix="$wfl_rel_name/" \
+        "$wfl_rel_tag"
+    wfl_gpg --armor --detach-sign "$wfl_src_tar_path"
+    xz --keep "$wfl_src_tar_path" > "$wfl_src_tar_xz_path"
 
-# Release urls
-wfl_rel_base_url="http://www.waffle-gl.org/files/release/${wfl_rel_name}"
-wfl_src_tar_xz_url="${wfl_rel_base_url}/${wfl_src_tar_xz_basename}"
-wfl_src_tar_xz_sig_url="${wfl_src_tar_xz_url}.sig"
-wfl_announce_url="${wfl_rel_base_url}/${wfl_announce_url}"
-wfl_sha256sums_url="${wfl_rel_base_url}/${wfl_sha256sums_basename}"
-
-    wfl_git archive --prefix="$wfl_src_archive_prefix" "$wfl_rel_tag" |
-    xz > "$wfl_src_tar_xz_path"
-
-    wfl_gpg --armor --detach-sign "$wfl_src_tar_xz_path"
-
-    (
-        cd "$arg_out_dir"
-        sha256sum "$wfl_src_tar_xz_basename" > "$wfl_sha256sums_basename"
-    )
-
-    truncate -s0 "$wfl_rel_email_path"
-    wfl_print_email_header >> "$wfl_rel_email_path"
-
+    wfl_src_tar_xz_sha256="$(sha256sum "$wfl_src_tar_xz_path" | cut -f 1 -d ' ')"
+    echo "$wfl_src_tar_xz_sha256  $wfl_src_tar_xz_basename" > "$wfl_sha256sums_path"
+    wfl_gpg --armor "$wfl_sha256sums_path" > "$wfl_armored_sha256sums_path"
 }
 
-function wfl_print_release_email_header {
-    printf 'From: %s\n' "$arg_from"
-    printf 'To: waffle@lists.freedesktop.org\n'
-    if [[ ${#arg_cc[@]} -gt 0 ]]; then
-        printf 'Cc: %s\n' "${arg_cc[@]}"
-    fi
-    printf 'Subject: [ANNOUNCE] Waffle %s\n' "$wfl_rel_version"
-    printf '\n'
-}
-
-function wfl_print_email_release_file_boilerplate {
-    printf 'A release candidate Waffle %s is now available for testing' "$wfl_rel_version"
-    printf
-
-}
-
-function wfl_print_email_body {
-    sed < "$wfl_rel_notes_path" \
-        -e 
-    wfl_gpg --clearsign < "$wfl_rel_notes_path" |
-}
-
-function wfl_make_email {
-    awk -f <(wfl_email_awk_prog)
-    #    BEGIN {
-    #        print \"From: $arg_from\";
-    #        print \"To: waffle@lists.freedesktop.org\";
-    #        $(
-    #            if [[ ${#arg_cc[@]} -ne 0 ]]; then
-    #                printf 'print "Cc: %s";\n' "${arg_cc[@]}"
-    #            fi
-    #        )
-    #    }
-    #"
-    ##printf 'From: %s\n' "$arg_from"
-    ##printf 'To: waffle@lists.freedesktop.org\n'
-    ##if [[ ${#arg_cc[@]} -ne 0 ]]; then
-    ##    printf 'Cc: %s\n' "${arg_cc[@]}"
-    ##fi
-
-    ##printf '\n'
-
-    ##sed --regexp-extended --e "
-    #    s/^\s*(TODO(sha256sum)  $wfl_tarball_basename$/
-
-
-    #gpg "${arg_gpg_opt[@]}" --clearsign < "$wfl_rel_notes_path"
+function wfl_push_rel_files {
+    
 }
 
 # Git info
@@ -290,13 +255,25 @@ wfl_rel_version="${wfl_rel_tag#v}"
 wfl_rel_version_stable_part="${wfl_rel_version%-*}"
 wfl_rel_name="waffle-${wfl_rel_version}"
 wfl_rel_notes_path="$wfl_git_work_tree/doc/release-notes/waffle-${wfl_rel_version_stable_part}.txt"
+IFS='.' read -r wfl_rel_major_version \
+                wfl_rel_minor_version \
+                wfl_rel_patch_version <<< "$wfl_rel_version"
 
-# Release files
+# Release files, basenames.
 wfl_src_tar_basename="${wfl_rel_name}.tar"
-wfl_src_tar_xz_basename="${wfl_src_tar_basename}.xz"
 wfl_src_tar_sign_basename="${wfl_src_tar_basename}.asc"
+wfl_src_tar_xz_basename="${wfl_src_tar_basename}.xz"
 wfl_sha256sums_basename="${wfl_rel_name}.sha256sums"
+wfl_armored_sha256sums_basename="${wfl_sha256sums_basename}.asc"
 wfl_rel_email_basename="${wfl_rel_name}.eml"
+
+# Release files, full paths.
+wfl_src_tar_path="$arg_out_dir/$wfl_src_tar_basename"
+wfl_src_tar_xz_path="$arg_out_dir/$wfl_src_tar_xz_basename"
+wfl_src_tar_sign_path="$arg_out_dir/$wfl_src_tar_sign_basename"
+wfl_sha256sums_path="$arg_out_dir/$wfl_sha256sums_basename"
+wfl_armored_sha256sums_path="$arg_out_dir/$wfl_armored_sha256sums_basename"
+wfl_rel_email_path="$arg_out_dir/$wfl_rel_email_basename"
 
 # Release urls
 wfl_rel_base_url="http://www.waffle-gl.org/files/release/${wfl_rel_name}"
@@ -305,30 +282,10 @@ wfl_src_tar_sign_url="${wfl_rel_base_url}/${wfl_src_tar_sign_basename}"
 wfl_rel_email_url="${wfl_rel_base_url}/${wfl_rel_email_basename}"
 wfl_sha256sums_url="${wfl_rel_base_url}/${wfl_sha256sums_basename}"
 
-wfl_make_rel_files
+function cmd_make-release-files {
+    wfl_make_rel_files
+}
 
-wfl_rc_release_email_templ="\
-A release candidate Waffle $wfl_rel_version is now available for testing.
-
-The tarballs and other release files are found at
-
-    $wfl_src_tar_xz_url  SHA-256 $wfl_src_tar_xz_sha256
-    $wfl_src_tar_sign_url
-    $wfl_sha256sums_url
-
-The signed git tag '$wfl_rel_tag' is published in 
-
-    git://github.com/waffle-gl/waffle
-
-Commit history for this release can be viewed at
-
-    https://github.com/waffle-gl/waffle/commits/refs/tags/$wfl_rel_tag
-
-Please file bugs and other issues at
-
-    https://github.com/waffle-gl/waffle/issues
-
-You can track the release status at
-
-    https://github.com/waffle-gl/waffle/milestones
-"
+function cmd_push-release-files {
+    wfl_push_rel_files
+}
