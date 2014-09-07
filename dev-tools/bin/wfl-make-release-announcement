@@ -1,0 +1,210 @@
+#!/usr/bin/python3
+
+import argparse
+import io
+import logging
+import os
+import re
+import subprocess as subproc
+import sys
+import textwrap
+
+import mako.runtime
+import mako.template
+
+prog = os.path.basename(sys.argv[0])
+
+def die(msg):
+    print(prog + ': ' + msg, file=sys.stderr)
+    sys.exit(1)
+
+rc_release_tag_re = re.compile(r'^v\d+\.\d+\.0-rc\d+$')
+feature_release_tag_re = re.compile(r'^v\d+\.\d+\.0$')
+maint_release_tag_re = re.compile(r'^v\d+\.\d+\.\([1-9][0-9]*\)$')
+
+website_url = 'http://www.waffle-gl.org'
+
+email_header_template = mako.template.Template(textwrap.dedent("""\
+    Subject: [ANNOUNCE] Waffle ${v.str}
+    From: ${from_address}
+    To: waffle@lists.freedesktop.org"""))
+
+email_body_template = mako.template.Template(textwrap.dedent("""\
+    % if v.release_type == 'rc':
+    Waffle ${v.str} is released and available for testing. This is a preview and
+    testing release for the upcoming ${v.final_version.str} feature release.
+    % elif v.release_type == 'feature':
+    Waffle ${v.str} is released. This is a stable release that introduces new
+    features.
+    % elif v.release_type == 'maintenance':
+    Waffle ${v.str} is released. This is a maintenance release that fixes issuses
+    since Waffle ${v.prev_version.str}.
+    % else:
+    <% assert(False) %>
+    % endif
+
+    Source tarballs and other release files are available at
+        Source:        ${v.get_url('src_ball')}
+        GPG Signature: ${v.get_url('src_sign')}
+        SHA-256 Sums:  ${v.get_url('digests')}
+
+        (SHA-256) ${v.src_ball_digest}  ${v.get_filename('src_ball')}
+
+    The signed git tag ${v.tag} is published in each of
+        git://github.com/waffle-gl/waffle
+        http://github.com/waffle-gl/waffle
+        https://github.com/waffle-gl/waffle
+
+    You can verify the release files by...
+        Verifying the tarball's signature:
+        xz --stdout --decompress ${v.src_ball} | gpg --verify ${v.src_sign}
+
+        Verifying the tag's signature:
+        git tag --verify ${v.tag}
+
+        Verifying the tarball's checksum (least secure method):
+        echo '${v.src_ball_digest}  ${v.src_ball}' | sha256sum -c
+
+    Please file bugs and other issues at
+        https://github.com/waffle-gl/waffle/issues
+
+    You can view the commit history for this release at
+        https://github.com/waffle-gl/waffle/commits/refs/tags/${v.tag}
+
+    % if v.release_type == 'rc':
+    You can track the status of the upcoming ${v.final_version.str} release at
+        https://github.com/waffle-gl/waffle/milestones
+    % endif"""))
+
+class Version:
+
+    EXTENSIONS = {
+        'src_ball': '.tar.xz',
+        'src_sign': '.tar.asc',
+        'digests': '.sha256sums.asc',
+        }
+
+    def __init__(self, tag, web_work_tree):
+        self.tag = tag
+        self.web_work_tree = web_work_tree
+        self.release_type = get_release_type(tag)
+        self.quad = get_version4(self.str)
+        (self.major, self.minor, self.patch, self.rc) = self.quad
+        self.__check_local_files_exist()
+
+    def __check_local_files_exist(self):
+        for name in self.EXTENSIONS:
+            path = self.get_local_path(name)
+            if not os.path.exists(path):
+                die('file {0!r} does not exist'.format(path))
+
+    @property
+    def str(self):
+        return self.tag[len('v'):]
+
+    @property
+    def filename_prefix(self):
+        return 'waffle-' + self.str
+
+    @property
+    def url_path_prefix(self):
+        return os.path.join('files', 'release', self.filename_prefix)
+
+    @property
+    def final_version(self):
+        return Version(tag_from_v4(self.quad))
+
+    @property
+    def prev_version(self):
+        q = self.quad.copy()
+        i = dict(feature=None, maint=2, rc=3)[self.release_type]
+        assert(q[i] > 0)
+        q[i] -= 1
+        return Version(tag_from_v4(q))
+
+    def get_filename(self, name):
+        return self.filename_prefix + self.EXTENSIONS[name]
+
+    def get_url_path(self, name):
+        return os.path.join(self.url_path_prefix, self.get_filename(name))
+
+    def get_url(self, name):
+        return website_url + '/' + self.get_url_path(name)
+
+    def get_local_path(self, name):
+        return os.path.join(self.web_work_tree, self.get_url_path(name))
+
+    @property
+    def src_ball_digest(self):
+        src_ball_filename = self.get_filename('src_ball')
+        with open(self.get_local_file('digests')) as f:
+            for line in f:
+                s = line.strip().split(' ')
+                if len(s) == 3 and s[2] == src_ball_filename:
+                    return s[0]
+
+        die(('failed to find digest entry {0!r} in file '
+             '{1!r}').format(src_ball_filename,
+                             self.get_local_file('digests')))
+
+def get_version4(version_str):
+    (major, minor, maybe_patch) = version_str.split('.')
+
+    if '-' in maybe_patch:
+        (patch, rc) = maybe_patch.split('-')
+        rc = rc[len('rc'):]
+    else:
+        patch = maybe_patch
+        rc = None
+
+    return (major, minor, patch, rc)
+
+def get_release_type(tag):
+    if rc_release_tag_re.match(tag):
+        return 'rc'
+    elif feature_release_tag_re.match(tag):
+        return 'feature'
+    elif maint_release_tag_re.match(tag):
+        return 'maint'
+    else:
+        die(('tag {0!r} does not look like '
+             'a version tag').format(tag))
+
+def tag_from_version4(v4):
+    tag = 'v' + '.'.join(v4[0:3])
+    if len(v4) == 4:
+        tag += '-rc' + v4[3]
+    return tag
+
+def get_email():
+    try:
+        ident = subproc.check_output(['git', 'var', 'GIT_AUTHOR_IDENT'])
+    except subproc.CalledProcessError as e:
+        die('failed to get GIT_AUTHOR_IDENT: {0!r}'.format(e))
+
+    ident = ident.decode().rstrip()
+    example_time = ' 1410122845 -0700'
+    return ident[:-len(example_time)]
+
+def render_email(version):
+    buf = io.StringIO()
+    ctx = mako.runtime.Context(
+        buffer=buf,
+        v=version,
+        from_address=get_email())
+    email_header_template.render_context(ctx)
+    email_body_template.render_context(ctx)
+    print(buf.getvalue())
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-t', '--tag', required=True)
+    parser.add_argument('-w', '--website-work-tree', required=True)
+    args = parser.parse_args()
+
+    version = Version(tag=args.tag,
+                      web_work_tree=args.website_work_tree)
+    render_email(version)
+
+if __name__ == '__main__':
+    main()
