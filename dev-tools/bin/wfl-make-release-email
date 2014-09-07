@@ -25,10 +25,11 @@ function wfl_print_opt_spec {
 	cc=email            Add a Cc: header. May occur multiple times.
 	S,gpg-key=keyid     Specify non-default GPG signing key.
 	gpg-opt=opt         Pass <opt> to gpg(1). May occur multiple times.
+	k,keep              Keep temporary directory.
 	EOF
 }
 
-function wfl_print_release_email_header {
+function wfl_print_rel_email_header {
     cat <<-EOF
 	Subject: [ANNOUNCE] Waffle $wfl_rel_version
 	From: $arg_from
@@ -40,7 +41,7 @@ function wfl_print_release_email_header {
     fi
 }
 
-function wfl_print_release_email_body_common {
+function wfl_print_rel_email_body_common {
     cat <<-EOF
 	Tarballs and other release files are published at"
 
@@ -76,22 +77,25 @@ function wfl_print_release_email_body_common {
 	You can track the release status at"
 
 	    https://github.com/waffle-gl/waffle/milestones"
+
 	EOF
+
+    cat "$wfl_rel_notes_path"
 }
 
-function wfl_print_rc_release_email_{
+function wfl_print_rc_rel_email_body {
     echo "A release candidate Waffle ${wfl_rel_version} is now available for testing."
     echo
-    wfl_print_release_email_body_common
+    wfl_print_rel_email_body_common
 }
 
-function wfl_print_feature_release_email {
+function wfl_print_feature_rel_email_body {
     echo "The feature release Waffle ${wfl_rel_version} is now available."
     echo
-    wfl_print_release_email_body_common
+    wfl_print_rel_email_body_common
 }
 
-function wfl_print_maintenance_release_email {
+function wfl_print_maintenance_rel_email_body {
     local prev_version="${wfl_rel_major_version}.${wfl_rel_minor_version}.$((wfl_rel_patch_version - 1))"
 
     cat <<-EOF
@@ -100,11 +104,19 @@ function wfl_print_maintenance_release_email {
 
 	EOF
 
-    wfl_print_release_email_body_common
+    wfl_print_rel_email_body_common
+}
+
+function wfl_print_rel_email_body {
+    wfl_print_${wfl_rel_type}_rel_email_body
 }
 
 function wfl_git {
-    git --git-dir="$wfl_git_dir" "$@"
+    git --git-dir="$wfl_git_dir" --work-tree="$wfl_git_work_tree" "$@"
+}
+
+function wfl_web_git {
+    git --git-dir="$wfl_web_git_dir" --work-tree="$wfl_web_git_work_tree" "$@"
 }
 
 function wfl_gpg {
@@ -159,6 +171,20 @@ function parse_args {
                 arg_tag="$2"
                 shift 2
                 ;;
+            -k|--keep)
+                if [[ -v arg_keep ]]; then
+                    usage_error 'multiple occurences of argument <keep>'
+                fi
+                arg_keep=1
+                shift 1
+                ;;
+            --no-keep)
+                if [[ -v arg_keep ]]; then
+                    usage_error 'multiple occurences of argument <keep>'
+                fi
+                arg_keep=
+                shift 1
+                ;;
             --from)
                 if [[ -v arg_from ]]; then
                     usage_error 'multiple occurences of argument <from>'
@@ -175,13 +201,6 @@ function parse_args {
                     usage_error 'multiple occurences of argument <keyid>'
                 fi
                 arg_keyid="$2"
-                shift 2
-                ;;
-            -o|--out-dir)
-                if [[ -v arg_out_dir ]]; then
-                    usage_error 'multiple occurences of argument <out-dir>'
-                fi
-                arg_out_dir="$2"
                 shift 2
                 ;;
             *)
@@ -220,14 +239,27 @@ function parse_args {
     arg_cc=("${arg_cc[@]:1}")
     arg_gpg_opt=("${arg_gpg_opt[@]:1}")
 
-    : ${arg_out_dir:=$(pwd)}
+    : ${arg_keep:=0}
+}
+
+function wfl_make_tmp_dir {
+    tmp_dir="$(mktemp -d "/tmp/${prog}.XXXXXX"})"
+
+    if ! [[ "$arg_keep" ]]; then
+        trap "{ rm -rf '$tmp_dir'; }" EXIT
+    fi
 }
 
 function wfl_get_git_info {
     wfl_git_dir="$(git rev-parse --git-dir)"
     wfl_git_work_tree="$(wfl_git rev-parse --show-toplevel)"
+    wfl_git_pager="$(wfl_git var GIT_PAGER)"
+    wfl_git_editor="$(wfl_git var GIT_EDITOR)"
     wfl_git_user_name="$(wfl_git config user.name)" || unset wfl_git_user_name
     wfl_git_user_email="$(wfl_git config user.email)" || unset wfl_git_user_email
+
+    wfl_web_git_dir="$arg_web_git_dir"
+    wfl_web_git_work_tree="$(wfl_web_git rev-parse --show-toplevel)"
 }
 
 function wfl_get_rel_info {
@@ -263,12 +295,16 @@ function wfl_get_rel_basenames {
 }
 
 function wfl_get_rel_paths {
-    wfl_src_tar_path="$arg_out_dir/$wfl_src_tar_basename"
-    wfl_src_tar_xz_path="$arg_out_dir/$wfl_src_tar_xz_basename"
-    wfl_src_tar_sign_path="$arg_out_dir/$wfl_src_tar_sign_basename"
-    wfl_sha256sums_path="$arg_out_dir/$wfl_sha256sums_basename"
-    wfl_armored_sha256sums_path="$arg_out_dir/$wfl_armored_sha256sums_basename"
-    wfl_rel_email_path="$arg_out_dir/$wfl_rel_email_basename"
+    wfl_src_tar_path="$tmp_dir/$wfl_src_tar_basename"
+    wfl_src_tar_xz_path="$tmp_dir/$wfl_src_tar_xz_basename"
+    wfl_src_tar_sign_path="$tmp_dir/$wfl_src_tar_sign_basename"
+    wfl_sha256sums_path="$tmp_dir/$wfl_sha256sums_basename"
+    wfl_armored_sha256sums_path="$tmp_dir/$wfl_armored_sha256sums_basename"
+    wfl_rel_email_path="$tmp_dir/$wfl_rel_email_basename"
+
+    wfl_tmp_src_dir="$tmp_dir/$wfl_rel_name"
+    wfl_tmp_build_dir="$wfl_tmp_src_dir"
+    wfl_tmp_prefix="$tmp_dir/prefix"
 |
 
 function wfl_get_rel_urls {
@@ -292,18 +328,80 @@ function wfl_make_rel_tarballs {
     wfl_gpg --armor "$wfl_sha256sums_path" > "$wfl_armored_sha256sums_path"
 }
 
-
 function wfl_make_rel_email {
-    
+    wfl_print_rel_email_body > "$wfl_rel_email_path"
+
+    # Give user an opportunity to edit the email.
+    "$wfl_git_editor" "$wfl_rel_email_path"
+
+    mv "$wfl_rel_email_path" "${wfl_rel_email_path}.tmp"
+    {
+        wfl_print_rel_email_header
+        echo 
+        wfl_gpg --stdout --armor "${wfl_rel_email_path}.tmp"
+    } > "$wfl_rel_email_path"
+
+    # The email is now signed, so don't alter it.
+    chmod -w "$wfl_rel_email_path"
+
+    # Give user an opportunity to review the email after gpg wraps it in armor,
+    # just in case the GPG armor mangled the formatting.
+    "$wfl_git_editor" "$wfl_rel_email_path"
+
+    while true; do
+        declare -l choice=
+        read -r -p "> Does the email look good? [Y/n] " choice
+        case "$choice" in
+            y) break;;
+            n) exit 1;;
+            *) continue;;
+        esac
+    done
+}
+
+function wfl_configure_build_install {
+    local cmake_args=(
+        "-DCMAKE_BUILD_TYPE=Release"
+        "-DCMAKE_INSTALL_PREFIX=$wfl_tmp_prefix"
+        "-Dwaffle_build_examples=1"
+        "-Dwaffle_build_manpages=1"
+        "-Dwaffle_build_htmldocs=1"
+        "-H$wfl_tmp_src_dir"
+        "-B$wfl_tmp_build_dir"
+    )
+
+    tar -C "$tmp_dir" -xf "$wfl_src_tar_basename"
+    cmake "${cmake_args[@]}"
+    make -j4 -C "$wfl_tmp_build_dir"
+
+    if [[ "$arg_run_unit_tests" ]]; then
+        make -j4 -C "$wfl_tmp_build_dir" check
+    fi
+
+    if [[ "$arg_run_functional_tests" ]]; then
+        make -j4 -C "$wfl_tmp_build_dir" check-func
+    fi
+
+    make -C "$wfl_tmp_build_dir" install
+}
+
+function wfl_update_website {
+    rsync --verbose --archive --delete \
+        "$wfl_tmp_prefix/$wfl_doc_dir/html/man/" \
+        "$wfl_web_work_tree/man/"
+    wfl_web_git
 }
 
 wfl_get_git_info
-
 parse_args "$@"
+
+wfl_make_tmp_dir
 
 wfl_get_rel_info
 wfl_get_rel_paths
 wfl_get_rel_urls
 
 wfl_make_rel_tarballs
+wfl_configure_build_install
 wfl_make_rel_email
+wfl_update_website
