@@ -679,8 +679,9 @@ function wfl_send_release_email {
 
 parse_args "$@"
 
-wfl_get_git_info
+wfl_make_tmp_dir
 
+wfl_get_git_info
 wfl_get_release_info
 wfl_get_release_paths
 wfl_get_release_urls
@@ -689,7 +690,6 @@ wfl_check_local_git_repos_are_clean
 wfl_pre_inspect_local_git
 wfl_web_pre_inspect_local_git
 
-wfl_make_tmp_dir
 
 
 # Next we begin writing to the git repos. Be nice, and provide cleanup hints on
