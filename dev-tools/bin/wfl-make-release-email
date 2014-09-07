@@ -20,12 +20,13 @@ function wfl_print_opt_spec {
 
 	  Optional Arguments
 	h,help              Show this help message.
-	o,out-dir=out-dir   Default is current directory.
-	from=email          The value for the From: header. Defaults to "user.name <user.email>" from git-config.
-	cc=email            Add a Cc: header. May occur multiple times.
+	sendmail-cmd=       Default is 'sendmail -t'.
+	from=address        The value for the From: header. Defaults to "user.name <user.email>" from git-config.
+	cc=address          Add a Cc: header. May occur multiple times.
 	S,gpg-key=keyid     Specify non-default GPG signing key.
 	gpg-opt=opt         Pass <opt> to gpg(1). May occur multiple times.
-	k,keep              Keep temporary directory.
+	run-unit-tests      Enabled by default.
+	run-functional-tests  Enabled by default.
 	EOF
 }
 
@@ -43,44 +44,44 @@ function wfl_print_rel_email_header {
 
 function wfl_print_rel_email_body_common {
     cat <<-EOF
-	Tarballs and other release files are published at"
+	Tarballs and other release files are published at
 
-	    ${wfl_src_tar_xz_url}  SHA-256 ${wfl_src_tar_xz_sha256}"
-	    ${wfl_src_tar_sign_url}"
-	    ${wfl_armored_sha256sums_url}"
+	    ${wfl_src_tar_xz_url}  SHA-256 ${wfl_src_tar_xz_sha256}
+	    ${wfl_src_tar_sign_url}
+	    ${wfl_armored_sha256sums_url}
 
-	The signed git tag '${wfl_rel_tag}' is published in "
+	The signed git tag '${wfl_rel_tag}' is published in 
 
-	    git://github.com/waffle-gl/waffle"
-	    http://github.com/waffle-gl/waffle"
-	    https://github.com/waffle-gl/waffle"
+	    git://github.com/waffle-gl/waffle
+	    http://github.com/waffle-gl/waffle
+	    https://github.com/waffle-gl/waffle
 
-	You can verify the release files by:"
+	You can verify the release files by:
 
-	    Verifying the tarball's signature:"
-	    xz -d ${wfl_src_tar_xz_basename} | gpg --verify ${wfl_src_tar_sign_basename}"
+	    Verifying the tarball's signature:
+	    xz -d ${wfl_src_tar_xz_basename} | gpg --verify ${wfl_src_tar_sign_basename}
 
-	    Verifying the tag's signature:"
-	    git tag --verify ${wfl_rel_tag}"
+	    Verifying the tag's signature:
+	    git tag --verify ${wfl_rel_tag}
 
-	    Verifying the tarball's checksum (least secure method):"
-	    echo '${wfl_src_tar_xz_sha256}  ${wfl_src_tar_xz_basename}' | sha256sum -c"
-	    "
-	Please file bugs and other issues at"
+	    Verifying the tarball's checksum (least secure method):
+	    echo '${wfl_src_tar_xz_sha256}  ${wfl_src_tar_xz_basename}' | sha256sum -c
+	    
+	Please file bugs and other issues at
 
-	    https://github.com/waffle-gl/waffle/issues"
+	    ${wfl_issue_tracker_url}
 
-	You can view the commit history for this release at"
+	You can view the commit history for this release at
 
-	    https://github.com/waffle-gl/waffle/commits/refs/tags/${wfl_rel_tag}"
+	    https://github.com/waffle-gl/waffle/commits/refs/tags/${wfl_rel_tag}
 
-	You can track the release status at"
+	You can track the release status at
 
-	    https://github.com/waffle-gl/waffle/milestones"
+	    ${wfl_release_tracker_url}
 
 	EOF
 
-    cat "$wfl_rel_notes_path"
+    cat "$wfl_release_notes_path"
 }
 
 function wfl_print_rc_rel_email_body {
@@ -109,6 +110,33 @@ function wfl_print_maintenance_rel_email_body {
 
 function wfl_print_rel_email_body {
     wfl_print_${wfl_rel_type}_rel_email_body
+}
+
+function git_has_staged_changes {
+    "$@" update-index -q --refresh
+    "$@" diff-index --quiet --cached HEAD
+}
+
+function git_has_unstaged_changes {
+    "$@" update-index -q --refresh
+    "$@" diff-files --quiet
+}
+
+function git_has_untracked_files {
+    local untracked_files= git_args=
+
+    "$@" update-index -q --refresh
+    git_args=("$@" 'ls-files' --others --exclude-standard --)
+    if ! untracked_files="$("${git_args[@]}")"; then
+        die "failed command: ${git_args[@]}"
+    fi
+    [[ -n "$untracked_files" ]]
+}
+
+function git_is_dirty {
+    git_has_staged_changes "$@" ||
+    git_has_unstaged_changes "$@" ||
+    git_has_untracked_files
 }
 
 function wfl_git {
@@ -148,6 +176,29 @@ function usage_error {
     parse_args --help
 }
 
+function wfl_prompt_yes_no {
+    while true; do
+        declare -l choice=
+
+        read -r -n1 -p "> $@ [Y/n] " choice
+        if ! [[ "$choice" ]]; then
+            choice="y"
+        fi
+
+        case "$choice" in
+            y) return 0;;
+            n) return 1;;
+            *) continue;;
+        esac
+    done
+}
+
+function wfl_prompt_pause {
+    while true; do
+        read -r -n1 -p "> $@ [any key to continue]"
+    done
+}
+
 function parse_args {
     arg_cc=('')
     arg_gpg_opt=('')
@@ -171,20 +222,6 @@ function parse_args {
                 arg_tag="$2"
                 shift 2
                 ;;
-            -k|--keep)
-                if [[ -v arg_keep ]]; then
-                    usage_error 'multiple occurences of argument <keep>'
-                fi
-                arg_keep=1
-                shift 1
-                ;;
-            --no-keep)
-                if [[ -v arg_keep ]]; then
-                    usage_error 'multiple occurences of argument <keep>'
-                fi
-                arg_keep=
-                shift 1
-                ;;
             --from)
                 if [[ -v arg_from ]]; then
                     usage_error 'multiple occurences of argument <from>'
@@ -202,6 +239,39 @@ function parse_args {
                 fi
                 arg_keyid="$2"
                 shift 2
+                ;;
+            --run-unit-tests|--no-run-unit-tests)
+                if [[ -v arg_run_unit_tests ]]; then
+                    usage_error 'multiple occurences of <run-unit-tests>'
+                fi
+
+                if [[ "$1" = --no-* ]]; then
+                    arg_run_unit_tests=
+                else
+                    arg_run_unit_tests=1
+                fi
+
+                shift 1
+                ;;
+            --run-functional-tests|--no-run-functional-tests)
+                if [[ -v arg_run_functional_tests ]]; then
+                    usage_error 'multiple occurences of <run-functional-tests>'
+                fi
+
+                if [[ "$1" = --no-* ]]; then
+                    arg_run_functional_tests=
+                else
+                    arg_run_functional_tests=1
+                fi
+
+                shift 1
+                ;;
+            --sendmail-cmd)
+                if [[ -v arg_sendmail_cmd ]]; then
+                    usage_error 'multiple occurences of <sendmail-cmd>'
+                fi
+                arg_sendmail_cmd="$1"
+                shift 1
                 ;;
             *)
                 internal_error
@@ -239,21 +309,48 @@ function parse_args {
     arg_cc=("${arg_cc[@]:1}")
     arg_gpg_opt=("${arg_gpg_opt[@]:1}")
 
-    : ${arg_keep:=0}
+    # Set default values.
+    : ${arg_sendmail_cmd:=sendmail -t}
+    : ${arg_run_unit_tests:=}
+    : ${arg_run_functional_tests:=}
 }
 
 function wfl_make_tmp_dir {
     tmp_dir="$(mktemp -d "/tmp/${prog}.XXXXXX"})"
+    echo "$prog: info: temporary directory created: $tmp_dir"
+}
 
-    if ! [[ "$arg_keep" ]]; then
-        trap "{ rm -rf '$tmp_dir'; }" EXIT
+function wfl_check_local_git_repos_are_clean {
+    if git_is_dirty wfl_git; then
+        die "git repo is dirty: $wfl_git_dir"
     fi
+
+    if git_is_dirty wfl_web_git; then
+        die "git repo is dirty: $wfl_web_git_dir"
+    fi
+}
+
+function wfl_pre_inspect_local_git {
+    if [[ "$(wfl_git log master..maint)" ]]; then
+        die "The 'master' branch is not a superset of 'maint'." \
+            "Checkout 'master', merge 'maint' into it, and try again."
+    fi
+
+    wfl_git log --graph --decorate --stat | less
+    wfl_prompt_yes_no "Does the waffle git look good?"
+
+    $wfl_git_editor "$wfl_release_notes_path"
+    wfl_prompt_yes_no "Do the raw release notes look good?"
+}
+
+function wfl_web_pre_inspect_local_git {
+    wfl_git log --graph --decorate --stat | less
+    wfl_prompt_yes_no "Does the waffle-web git log look good?"
 }
 
 function wfl_get_git_info {
     wfl_git_dir="$(git rev-parse --git-dir)"
     wfl_git_work_tree="$(wfl_git rev-parse --show-toplevel)"
-    wfl_git_pager="$(wfl_git var GIT_PAGER)"
     wfl_git_editor="$(wfl_git var GIT_EDITOR)"
     wfl_git_user_name="$(wfl_git config user.name)" || unset wfl_git_user_name
     wfl_git_user_email="$(wfl_git config user.email)" || unset wfl_git_user_email
@@ -273,7 +370,7 @@ function wfl_get_rel_info {
                     <<< "$wfl_rel_version"
     wfl_rel_rc_version="${wfl_rel_rc_version#rc}" # Strip 'rc' to get just the integer path.
     wfl_rel_version_stable_part="${wfl_rel_major_version}.${wfl_rel_minor_version}.${wfl_rel_patch_version}"
-    wfl_rel_notes_path="$wfl_git_work_tree/doc/release-notes/waffle-${wfl_rel_version_stable_part}.txt"
+    wfl_release_notes_path="$wfl_git_work_tree/doc/release-notes/waffle-${wfl_rel_version_stable_part}.txt"
 
 
     if [[ -n "$wfl_rel_rc_version" ]]; then
@@ -308,11 +405,33 @@ function wfl_get_rel_paths {
 |
 
 function wfl_get_rel_urls {
-    wfl_rel_base_url="http://www.waffle-gl.org/files/release/${wfl_rel_name}"
-    wfl_src_tar_xz_url="${wfl_rel_base_url}/${wfl_src_tar_xz_basename}"
-    wfl_src_tar_sign_url="${wfl_rel_base_url}/${wfl_src_tar_sign_basename}"
-    wfl_rel_email_url="${wfl_rel_base_url}/${wfl_rel_email_basename}"
-    wfl_sha256sums_url="${wfl_rel_base_url}/${wfl_sha256sums_basename}"
+    wfl_release_tracker_url="https://github.com/waffle-gl/waffle/milestones"
+    wfl_issue_tracker_url="https://github.com/waffle-gl/waffle/issues"
+
+    wfl_url_host="www.waffle-gl.org"
+    wfl_site_url="http://${wfl_url_host}"
+
+    wfl_src_tar_xz_url_path="files/release/${wfl_rel_name}/${wfl_src_tar_xz_basename}"
+    wfl_src_tar_sign_url_path="files/release/${wfl_rel_name}/${wfl_src_tar_sign_basename}"
+    wfl_rel_email_url_path="files/release/${wfl_rel_name}/${wfl_rel_email_basename}"
+    wfl_armored_sha256sums_url_path="files/release/${wfl_rel_name}/${wfl_armored_sha256sums_basename}"
+
+    wfl_src_tar_xz_url="${wfl_site_url}/${wfl_src_tar_xz_url_path}"
+    wfl_src_tar_sign_url="${wfl_site_url}/${wfl_src_tar_sign_url_path}"
+    wfl_rel_email_url="${wfl_site_url}/${wfl_rel_email_url_path}"
+    wfl_armored_sha256sums_url="${wfl_site_url}/${wfl_armored_sha256sums_url_path}"
+}
+
+function wfl_update_local_git {
+    wfl_git log --graph --decorate --stat | less
+    wfl_prompt_yes_no "Does log look good?"
+
+    $wfl_git_editor "$wfl_release_notes_path"
+    wfl_prompt_yes_no "Do release notes look good?"
+
+    wfl_prompt_yes_no "Proceed to locally tag '$wfl_rel_tag'?"
+    wfl_git tag -s -m "Waffle $wfl_rel_version" "$wfl_rel_tag"
+    wfl_rel_tag_sha1=$(git rev-parse $wfl_rel_tag)
 }
 
 function wfl_make_rel_tarballs {
@@ -348,15 +467,8 @@ function wfl_make_rel_email {
     # just in case the GPG armor mangled the formatting.
     "$wfl_git_editor" "$wfl_rel_email_path"
 
-    while true; do
-        declare -l choice=
-        read -r -p "> Does the email look good? [Y/n] " choice
-        case "$choice" in
-            y) break;;
-            n) exit 1;;
-            *) continue;;
-        esac
-    done
+    wfl_prompt_yes_no 'Does the email look good?'
+
 }
 
 function wfl_configure_build_install {
@@ -385,15 +497,152 @@ function wfl_configure_build_install {
     make -C "$wfl_tmp_build_dir" install
 }
 
-function wfl_update_website {
+function wfl_web_update_local_git {
+    local old_head=
+    old_head="$(wfl_git rev-parse HEAD)"
+
+    # Update manpages.
     rsync --verbose --archive --delete \
         "$wfl_tmp_prefix/$wfl_doc_dir/html/man/" \
         "$wfl_web_work_tree/man/"
-    wfl_web_git
+    wfl_web_git add -A
+    wfl_web_git diff -M --stat --cached | less
+    wfl_prompt_yes_no "Proceed to commit message?"
+    wfl_web_git commit -s --edit -m "man: Update manpages for Waffle $wfl_rel_tag"
+
+    # Update release files.
+    local stem=
+    for stem in wfl_release_notes \
+                wfl_src_tar_xz \
+                wfl_src_tar_sign \
+                wfl_armored_sha256sums; do
+        eval "cp -T '${stem}_path' '$wfl_web_git_work_tree/${stem}_url_path'"
+    done
+
+    {
+        cat <<-EOF
+	Paste the html code below into "${wfl_web_git_work_tree}/releases.html".
+
+	You are in 'less'. Press 'q' to quit.
+
+	      <li><a name="${wfl_rel_version}" href="#${wfl_rel_version}"><h3>${wfl_rel_version}</h3></a>
+	        <ul>
+	          <li>Date: $(date --utc --rfc-3339=date)</li>
+	          <li><a href="${wfl_release_notes_url_path}">Release Notes</a></li>
+	          <li><a href="${wfl_src_tar_xz_url_path}">${wfl_src_tar_xz_basename}</a></li>
+	          <li><a href="${wfl_src_tar_sign_url_path}">${wfl_src_tar_sign_basename}</a></li>
+	          <li><a href="${wfl_armored_sha256sums_url_path}" type="text/plain">${wfl_armored_sha256sums_basename}</a></li>
+	        </ul>
+	      </li>
+	EOF
+    } | less
+
+    wfl_web_git add -A
+    wfl_web_git diff -M --stat --cached | less
+    wfl_prompt_yes_no "Proceed to commit message?"
+    wfl_web_git commit -s --edit -m "releases: Add release artififacts for Waffle $wfl_rel_version"
+
+    wfl_web_git log --stat --patch "${old_head}..HEAD"
+    wfl_prompt_yes_no "Proceed to locally tag '$wfl_rel_tag'?"
+    wfl_web_git tag -s -m "Waffle $waffle_rel_version" "$wfl_rel_tag"
+}
+
+function wfl_update_remote_git {
+    local refs_to_push=('')
+
+    wfl_git log --stat --patch "${old_head}..HEAD" | less
+
+    if wfl_prompt_yes_no "Push tag '$wfl_rel_tag' to remote 'origin'?"; then
+        refs_to_push+=($wfl_rel_tag)
+    fi
+
+    case "$wfl_rel_type" in
+        rc|feature)
+            if wfl_prompt_yes_no "Push branch 'master' to 'origin'?"; then
+                refs_to_push+=('master')
+            fi
+            ;;
+        maintenance)
+            local maint_sha1=
+            local maint_versioned_branch="maint-${wfl_rel_major_version}.${wfl_rel_minor_version}"
+            local maint_versioned_sha1=
+                
+            if ! maint_sha1=$(wfl_git rev-parse maint --) \
+               && wfl_prompt_yes_no "Create local branch 'maint' from tag '$wfl_rel_tag'?"; then
+                wfl_git branch maint $wfl_rel_tag
+                maint_sha1=$(wfl_git rev-parse maint --)
+            fi
+
+            if ! maint_versioned_sha1=$(wfl_git rev-parse $maint_versioned_branch --) \
+               && wfl_prompt_yes_no "Create local branch '$maint_versioned_branch' from tag '$wfl_rel_tag'?"; then
+                wfl_git branch $maint_versioned_branch $wfl_rel_tag
+                maint_versioned_sha1=$(wfl_git rev-parse $maint_versioned_branch --)
+            fi
+
+            if [[ "$maint_versioned_sha1" = "$wfl_rel_tag_sha1" ]]; then
+               wfl_prompt_yes_no "Push branch '$maint_versioned_branch' to 'origin'?"; then
+               refs_to_push+=("$maint_versioned_branch")
+            fi
+            ;;
+        *)
+            internal_error
+            ;;
+    esac
+
+    # Remove initial dummy element.
+    refs_to_push="${refs_to_push[@]:1}"
+
+    if [[ ${#refs_to_push[@]} -gt 0 ]]; then
+        wfl_git push "origin" "${refs_to_push[@]}"
+    fi
+}
+
+function wfl_web_update_remote_git {
+    local refs_to_push=('')
+
+    wfl_web_git log --stat --patch "${old_head}..HEAD" | less
+
+    if wfl_prompt_yes_no "Push tag '$wfl_rel_tag' to remote 'origin'?"; then
+        refs_to_push+=($wfl_rel_tag)
+    fi
+
+    if wfl_prompt_yes_no "Push branch 'master' to 'origin'?"; then
+        refs_to_push+=('master')
+    fi
+
+    # Remove initial dummy element.
+    refs_to_push="${refs_to_push[@]:1}"
+
+    if [[ ${#refs_to_push[@]} -gt 0 ]]; then
+        wfl_web_git push "origin" "${refs_to_push[@]}"
+    fi
+}
+
+function wfl_send_release_email {
+    if wfl_prompt_yes_no "Review the release announcement?"; then
+        $wfl_git_editor "$wfl_rel_email_path"
+    fi
+
+    if ! wfl_prompt_yes_no "Send the announcement?"; then
+        return 0
+    fi
+    
+    local sendmail_cmd=
+    read -r -p "> Enter sendmail command [default='$arg_sendmail_cmd']: " sendmail_cmd
+    if [[ -z "$sendmail_cmd" ]]; then
+        sendmail_cmd="$arg_sendmail_cmd"
+    fi
+
+    $sendmail_cmd < "$wfl_rel_email_path"
 }
 
 wfl_get_git_info
+
 parse_args "$@"
+
+wfl_check_local_git_repos_are_clean
+wfl_pre_inspect_local_git
+wfl_web_pre_inspect_local_git
 
 wfl_make_tmp_dir
 
@@ -401,7 +650,38 @@ wfl_get_rel_info
 wfl_get_rel_paths
 wfl_get_rel_urls
 
+# Next we begin writing to the git repos. Be nice, and provide cleanup hints on
+# abrupt failures.
+trap "{
+    cat <<-EOF
+	$prog: exiting on error ...
+	You should inspect the logs for the following repos:
+	    $wfl_git_dir
+	    $wfl_web_git_dir
+	EOF;
+}" ERR
+
+wfl_prompt_pause "Begin preparing the release locally..."
+wfl_update_local_git
 wfl_make_rel_tarballs
 wfl_configure_build_install
 wfl_make_rel_email
-wfl_update_website
+wfl_web_update_local_git
+wfl_prompt_pause "Successfully prepared the release locally."
+
+wfl_prompt_pause "Begin interactively publishing changes..."
+wfl_update_remote_git
+wfl_web_update_remote_git
+wfl_prompt_pause "Done publishing changes."
+
+wfl_send_release_email
+
+# Give final hints.
+cat <<-EOF
+	Script is done.
+
+	Next steps:
+	    1. Cleanup the temporary directory: $tmp_dir
+	    2. Update release tracker: $wfl_release_tracker_url
+	    3. Inspect the issue tracker: $wfl_issue_tracker_url
+	EOF
