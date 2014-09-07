@@ -5,11 +5,9 @@ Waffle 1.4.0-rc1 is now available. This is a pre-release for 1.4.0.
 
 As usual, the release is available as a tarball...
 
-    http://www.waffle-gl.org/files/release/waffle-1.4.0-rc1/waffle-1.4.0-rc1.tar.xz
-    http://www.waffle-gl.org/files/release/waffle-1.4.0-rc1/waffle-1.4.0-rc1.tar.xz.sig
+    ${release_urls}
 
-    waffle-1.4.0-rc1.tar.xz             TODO (sha256)
-    waffle-1.4.0-rc1.tar.xz.sig         TODO (sha256)
+    ${release_sha256sums}
 
 ...and as a signed 'v1.4.0-rc1' tag in git:
 
