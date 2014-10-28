@@ -180,7 +180,7 @@ include_directories(
     )
 
 add_library(${waffle_libname} SHARED ${waffle_sources})
-target_link_libraries(${waffle_libname} PRIVATE ${waffle_libdeps})
+target_link_libraries(${waffle_libname} ${waffle_libdeps})
 
 set_target_properties(${waffle_libname}
     PROPERTIES
