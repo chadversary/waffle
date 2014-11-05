@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+
+import os
+import os.path
+import re
+import sys
+
+# Workflow:
+#       waffle-release tag 1.4.1
+#               Check on maint-1.4
+#               Check version numbers in code.
+#
+#       waffle-release tarball 1.4.1
+#               waffle-1.4.1.tar.xz
+#               waffle-1.4.1.tar.xz.gpg
+#
+#       waffle-release check-tarball 1.4.1
+#               Unpack tarball.
+#               Check doc/release-notes/waffle-1.4.1.txt.
+#               Check build of all Linux platforms.
+#
+#       waffle-release push 1.4.1
+#               Push main-1.4.1 and tarball.
+#
+#       waffle-release announce 1.4.1.
+#
+
+PROG_NAME = os.path.basename(sys.argv[0])
+
+VERSION_REGEX = re.compile(r'^\d\+\.\d\+\.\d\+$')
+
+MAJOR_RELEASE = 1
+MAINT_RELEASE = 2
+
+MAJOR_RELEASE_REGEX = re.compile(r'^\d\+\.\d\+\.0$')
+MAINT_RELEASE_REGEX = re.compile(r'^\d\+\.\d\+\.[1-9][0-9]*$')
+
+def loge(message):
+    print('{0}: error: {1}'.format(PROG_NAME, message))
+
+def die(message):
+    loge(message)
+    sys.exit(1)
+
+def parse_args():
+    p = argparse.ArgumentParser()
+    p.add_argument('command')
+    args = p.parse_args()
+
+    if VERSION_REGEX.match(args.version) is None:
+        p.error('{0!r} does not look like a version')
+
+    return args
+
+def get_release_type(version_str):
+    if MAJOR_RELEASE_REGEX.match(version_str) is not None:
+        return MAJOR_RELEASE
+    elif MAINT_RELEASE_REGEX.match(version_str) is not None:
+        return MAINT_RELEASE
+    else:
+        assert(False)
+
+class Command:
+
+    @property
+    def name(self):
+        raise NotImplementedError
+
+    @property
+    def parse_args(self, args):
+        raise NotImplementedError
+
+def cmd_tag(args):
+    p = argparse.ArgumentParser()
+    p.add_argument('version')
+    args = p.parse_args()
+
+    if VERSION_REGEX.match(args.version) is None:
+        p.error('{0!r} does not look like a version')
+
+    return args
+
+def main():
+    args = parse_args()
+    release_type = get_release_type(args.version)
+    if release_type == MAJOR_RELEASE:
+        do_major_release()
+    elif release_type ==
+    pass
+
+
+if __name__ == '__main__':
+    main()

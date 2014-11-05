@@ -1,0 +1,64 @@
+#!/bin/zsh
+
+set -x
+set -o errexit
+set -o nounset
+
+: ${WAFFLE_SRC_DIR:=}
+
+prog_name="${0:t}"
+
+function wfl_opt_spec {
+    cat <<EOF
+$prog_name <args>
+
+Make a maintenance release of Waffle.
+--
+h,help          show this help
+EOF
+}
+
+function wfl_global_setup {
+    wfl_meta_dir=$(readlink -f "${0:h}")
+
+    if [[ "$WAFFLE_SRC_DIR" ]]
+    then
+        wfl_src_dir="$WAFFLE_SRC_DIR"
+    else
+        wfl_src_dir=$(dirname "$wfl_meta_dir")
+    fi
+}
+
+function wfl_git {
+    (
+        cd "$wfl_src_dir"
+        git "$@"
+    )
+}
+
+function wfl_get_current_branch {
+    local symbolic_ref_out=
+
+    if ! symbolic_ref_out=$(wfl_git symbolic-ref HEAD)
+    then
+    sed --silent --regexp-extended '
+            s|^refs/heads/(.*)$|\1|
+            t good
+        : bad
+            q 1
+        : good
+            p
+            q 0
+    '
+}
+
+function wfl_tag_release {
+    git tag --sign --message="Waffle $wfl_ver_major.$wfl_ver_minor.$wfl_ver_micro"
+}
+
+function main {
+    wfl_global_setup
+    wfl_get_current_branch
+}
+
+main "$@"
