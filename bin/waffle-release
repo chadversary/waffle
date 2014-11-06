@@ -1,0 +1,218 @@
+#!/bin/zsh
+
+# Copyright 2014 Intel Corporation
+#
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# - Redistributions of source code must retain the above copyright notice, this
+#   list of conditions and the following disclaimer.
+#
+# - Redistributions in binary form must reproduce the above copyright notice,
+#   this list of conditions and the following disclaimer in the documentation
+#   and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+set -o errexit
+set -o nounset
+set -o pipefail
+
+prog_name="${0:t}"
+
+arg_refname=
+arg_branch=0
+arg_tag=0
+
+function wfl_opt_spec {
+cat <<EOF
+$prog_name <command> [args...]
+
+SUMMARY
+    $prog_name is a tool for making Waffle releases.
+--
+h,help          show this help text
+EOF
+}
+
+function wfl_parse_args {
+    eval "$(wfl_opt_spec | git rev-parse --parseopt -- "$@" || echo exit 2)"
+
+    # discard the '--'
+    shift
+
+#    if [[ $# -eq 0 ]]
+#    then
+#        wfl_usage_error "missing argument <refname>"
+#    fi
+#    arg_refname="$1"
+#    shift
+#
+#    if [[ $# -ne 0 ]]
+#    then
+#        wfl_usage_error "trailing args: $@"
+#    fi
+}
+
+function wfl_usage_error {
+    echo "$prog_name: usage error: $@"
+    exit 2
+}
+
+function wfl_die {
+    echo "$prog_name: error: $@"
+    exit 1
+}
+
+function cmd_tag {
+    local tag_name
+    local version_name
+
+    tag_name=$(wfl_fmt_next_release_tag)
+    version_name=$(wfl_fmt_next_release_version)
+    git tag --sign --message="Waffle $version_name" "$tag_name"
+}
+
+function wfl_check_tree_is_clean {
+    if ! git diff --no-ext-diff --quiet --exit-code ||
+       ! git diff-index --cached --quiet HEAD --
+    then
+        wfl_die "tree contains uncommitted changes"
+    elif git ls-files --others --exclude-standard --error-unmatch \
+        -- '*' &>/dev/null
+    then
+        wfl_die "tree contains untracked files"
+    fi
+}
+
+function wfl_print_current_branch {
+    local symbolic_ref_target
+
+    symbolic_ref_target=$(git symbolic-ref HEAD)
+    if [[ "$symbolic_ref_target" = refs/heads/* ]]
+    then
+        echo "${symbolic_ref_target#refs\/heads\/}"
+    else
+        wfl_die "HEAD does not refer to any branch in refs/heads"
+    fi
+}
+
+function wfl_print_prev_release_tag {
+    local branch_name
+
+    branch_name=$(wfl_print_current_branch)
+
+    case "$branch_name" in
+        master)
+            wfl_die "TODO: implement major releases"
+            ;;
+        maint)
+            # Get highest release tag among all releases.
+            git tag --list |
+            grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' |
+            sort |
+            tail -1
+            ;;
+        maint-*)
+            if ! [[ "$branch_name" =~ ^maint-([0-9]+)\.([0-9]+)$ ]]
+            then
+                wfl_die "current branch '$branch_name' is ill-formed"
+            fi
+
+            major="$match[1]"
+            minor="$match[2]"
+
+            # Get the highest release tag in this series of
+            # MAJOR.MINOR maintenance releases.
+            git tag --list |
+            grep -E "^v${major}\.${minor}\.[0-9]+$" |
+            sort |
+            tail -1
+            ;;
+        *)
+            wfl_die "current branch '$branch_name' is neither 'master' " \
+                "nor a maintenance branch"
+            ;;
+    esac
+}
+
+function wfl_fmt_next_version_tuple {
+    local branch_name
+    local prev_tag
+    local prev_version_tuple
+
+    branch_name=$(wfl_print_current_branch)
+    prev_tag=$(wfl_print_prev_release_tag)
+    prev_version_tuple=("$(wfl_fmt_version_tuple_from_tag "$prev_tag")")
+
+    # Assert version is a 3-tuple.
+    [[ "${prev_tag[@]}" = 3 ]]
+
+    local major="$prev_tag[1]"
+    local minor="$prev_tag[2]"
+    local micro="$prev_tag[3]"
+
+    case "$branch_name" in
+        master)
+            wfl_die "TODO: implement major releases"
+            ;;
+        maint|maint-*)
+            (( ++micro ))
+            ;;
+        *)
+            false # oops. internal error.
+            ;;
+    esac
+
+    echo "$major $minor $micro"
+}
+
+function wfl_fmt_next_release_version {
+    local ver
+
+    ver=("$(wfl_fmt_version_tuple_from_tag)")
+
+    # Assert version is a 3-tuple.
+    [[ ${#ver[@]} -eq 3 ]]
+
+    echo "${ver[1]}.${ver[2]}.${ver[3]}"
+}
+
+function wfl_fmt_next_release_tag {
+    echo "v$(wfl_fmt_next_release_versoin)"
+}
+
+function wfl_fmt_version_tuple_from_tag {
+    local tag="$1"
+
+    if ! [[ "$tag" =~ ^v([0-9]\+)\.([0-9]\+)\.([0-9]\+)$ ]]
+    then
+        wfl_die "tag '$tag' is ill-formed"
+    fi
+
+    echo "${match[@]}"
+}
+
+function main {
+    local wfl_git_dir=
+    local merge_status=0
+
+    wfl_parse_args "$@"
+
+    wfl_git_dir=$(git rev-parse --git-dir)
+    wfl_check_tree_is_clean
+    cmd_tag
+}
+
+main "$@"
