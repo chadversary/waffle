@@ -25,6 +25,8 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import argparse
+import logging as log
 import os
 import os.path
 import shlex
@@ -33,50 +35,163 @@ import sys
 
 PROG_NAME = os.path.basename(sys.argv[0])
 
-def _log_tag(tag, message, file=sys.stdout):
-    print("{0}: {1}: {2}".format(PROG_NAME, tag, message), file=file)
 
-def usage_error(message):
-    _log_tag("usage error", message, file=sys.stderr)
-    sys.exit(1)
+#class RegisterSubclasses(type):
+#
+#    def __init__(cls, name, bases, namespac):
+#        super(RegisterLeafClasses, cls).__init__(name, bases, namespace)
+#
+#        if not hasattr(cls, 'subclass_registry'):
+#            cls.subclass_registry = set()
+#        cls.subclass_registry.add(cls)
+#
+#    def __iter__(cls):
+#        return iter(cls.subclass_registry)
 
-def loge(message):
-    _log_tag("error", message, file=sys.stderr)
+class Command:
 
-def die(message):
-    loge(message)
-    sys.exit(1)
+    @staticmethod
+    def get_command(name, default=None):
+        for cmd in Command.__subclasses__():
+            if cmd.name == name:
+                return cmd
+        return default
 
-def check_call(args):
-    if isinstance(args, str):
-        subprocess.check_call(shlex.split(args))
-    else:
-        subprocess.check_call(args)
+    @staticmethod
+    def iter_commands():
+        return iter(Command.__subclasses__())
 
-def call(args):
-    if isinstance(args, str):
-        return subprocess.call(shlex.split(args))
-    else:
-        return subprocess.call(args)
+    @classmethod
+    def make_argparser(cls):
+        return argparse.ArgumentParser(
+            prog='{0} {1}'.format(PROG_NAME, cls.name),
+            description=cls.desc)
 
-def cmd_tag():
-    branch_name = get_current_branch_name()
-    tag_name = get_next_release_tag_name(branch_name)
-    check_call(['git', 'tag', '--sign',
-        '--message', 'Waffle ' + version_name, tag_name])
+class CommandHelp(Command):
 
-def check_tree_is_clean():
-    if (call('git diff --no-ext-diff --quiet --exit-code') != 0 or
-        call('git diff-index --cached --quiet HEAD --') != 0):
-        die('tree contains uncommitted changes')
+    name = 'help'
+    desc = 'show help on some topic'
 
-    if call('git ls-files --others --exclude-standard --error-unmatch-- *') != 0:
-        die('tree contains untracked files')
+    @classmethod
+    def call(cls, args):
+        p = cls.make_argparser()
+        p.add_argument('topic', nargs='?')
+        pargs = p.parse_args(args)
+
+        if pargs.topic is None:
+            cls.__list_commands()
+        else:
+            cls.__show_topic_help(pargs.topic)
+
+    @classmethod
+    def __list_commands(cls):
+        for cmd in sorted(Command.iter_commands(),
+                          key=lambda cmd: cmd.name):
+            print('    {0:20}    {1}'.format(cmd.name, cmd.desc))
+
+    @classmethod
+    def __show_topic_help(cls, topic):
+        cmd = Command.get_command(topic)
+        if cmd is None:
+            die('{0!r} is not a help topic'.format(topic))
+        cmd.call('--help')
+
+class CommandPrintPrevVersion(Command):
+
+    name = 'print-prev-version'
+    desc = 'the previous version created from this branch'
+
+    @classmethod
+    def call(cls, args):
+        p = cls.make_argparser()
+        log.error('TODO: not implemented')
+
+class CommandPrintNextVersion(Command):
+
+    name = 'print-next-version'
+    desc = 'the next version to create from this branch'
+
+    @classmethod
+    def call(cls, args):
+        p = cls.make_argparser()
+        log.error('TODO: not implemented')
+
+class ReleaseVersion:
+
+    def __init__(self, major, minor, micro, extra=None):
+        assert(isinstance(major, int))
+        assert(isinstance(minor, int))
+        assert(isinstance(micro, int))
+        if extra is not None:
+            assert(isinstance(extra, int))
+
+        self.major = major
+        self.minor = minor
+        self.micro = micro
+        self.extra = extra
+
+    @property
+    def as_tuple(self):
+        return (self.major, self.minor, self.micro, self.extra)
+
+    @property
+    def as_string(self):
+        if self.extra is None:
+            return '{self.major}.{self.minor}.{self.micro}'.format(self=self)
+        else:
+            return '{self.major}.{self.minor}.{self.micro}-{self.extra}'.format(self=self)
+    @property
+    def tag_name(self):
+        return 'v' + self.version_string
+
+def die(message, exit_code=1):
+    log.error(message)
+    sys.exit(exit_code)
+
+def main():
+    CommandHelp.call(sys.argv[1:])
+
+if __name__ == '__main__':
+    main()
+
+#def usage_error(message):
+#    _log_tag("usage error", message, file=sys.stderr)
+#    sys.exit(1)
+
+#def die(message):
+#    loge(message)
+#    sys.exit(1)
+#
+#def check_call(args):
+#    if isinstance(args, str):
+#        subprocess.check_call(shlex.split(args))
+#    else:
+#        subprocess.check_call(args)
+#
+#def call(args):
+#    if isinstance(args, str):
+#        return subprocess.call(shlex.split(args))
+#    else:
+#        return subprocess.call(args)
+#
+#def cmd_tag():
+#    branch_name = get_current_branch_name()
+#    tag_name = get_next_release_tag_name(branch_name)
+#    check_call(['git', 'tag', '--sign',
+#        '--message', 'Waffle ' + version_name, tag_name])
+#
+#def check_tree_is_clean():
+#    if (call('git diff --no-ext-diff --quiet --exit-code') != 0 or
+#        call('git diff-index --cached --quiet HEAD --') != 0):
+#        die('tree contains uncommitted changes')
+#
+#    if call('git ls-files --others --exclude-standard --error-unmatch-- *') != 0:
+#        die('tree contains untracked files')
 
 def get_current_branch_name():
     symbolic_ref_target = check_output('git symbolic-ref HEAD')
 
-    if ! symbolic_head_target.startswith('refs/heads/'):
+    if not symbolic_head_target.startswith('refs/heads/'):
         die('HEAD does not refer to any branch in refs/heads')
 
     return symbolic_ref_target.lstrip('refs/heads/')
@@ -111,74 +226,73 @@ def get_prev_release_tag(branch_name):
                 "nor a maintenance branch"
             ;;
     esac
-}
 
-function wfl_fmt_next_version_tuple {
-    local branch_name
-    local prev_tag
-    local prev_version_tuple
-
-    branch_name=$(wfl_print_current_branch)
-    prev_tag=$(wfl_print_prev_release_tag)
-    prev_version_tuple=("$(wfl_fmt_version_tuple_from_tag "$prev_tag")")
-
-    # Assert version is a 3-tuple.
-    [[ "${prev_tag[@]}" = 3 ]]
-
-    local major="$prev_tag[1]"
-    local minor="$prev_tag[2]"
-    local micro="$prev_tag[3]"
-
-    case "$branch_name" in
-        master)
-            wfl_die "TODO: implement major releases"
-            ;;
-        maint|maint-*)
-            (( ++micro ))
-            ;;
-        *)
-            false # oops. internal error.
-            ;;
-    esac
-
-    echo "$major $minor $micro"
-}
-
-function wfl_fmt_next_release_version {
-    local ver
-
-    ver=("$(wfl_fmt_version_tuple_from_tag)")
-
-    # Assert version is a 3-tuple.
-    [[ ${#ver[@]} -eq 3 ]]
-
-    echo "${ver[1]}.${ver[2]}.${ver[3]}"
-}
-
-function wfl_fmt_next_release_tag {
-    echo "v$(wfl_fmt_next_release_versoin)"
-}
-
-function wfl_fmt_version_tuple_from_tag {
-    local tag="$1"
-
-    if ! [[ "$tag" =~ ^v([0-9]\+)\.([0-9]\+)\.([0-9]\+)$ ]]
-    then
-        wfl_die "tag '$tag' is ill-formed"
-    fi
-
-    echo "${match[@]}"
-}
-
-function main {
-    local wfl_git_dir=
-    local merge_status=0
-
-    wfl_parse_args "$@"
-
-    wfl_git_dir=$(git rev-parse --git-dir)
-    wfl_check_tree_is_clean
-    cmd_tag
-}
-
-main "$@"
+#function wfl_fmt_next_version_tuple {
+#    local branch_name
+#    local prev_tag
+#    local prev_version_tuple
+#
+#    branch_name=$(wfl_print_current_branch)
+#    prev_tag=$(wfl_print_prev_release_tag)
+#    prev_version_tuple=("$(wfl_fmt_version_tuple_from_tag "$prev_tag")")
+#
+#    # Assert version is a 3-tuple.
+#    [[ "${prev_tag[@]}" = 3 ]]
+#
+#    local major="$prev_tag[1]"
+#    local minor="$prev_tag[2]"
+#    local micro="$prev_tag[3]"
+#
+#    case "$branch_name" in
+#        master)
+#            wfl_die "TODO: implement major releases"
+#            ;;
+#        maint|maint-*)
+#            (( ++micro ))
+#            ;;
+#        *)
+#            false # oops. internal error.
+#            ;;
+#    esac
+#
+#    echo "$major $minor $micro"
+#}
+#
+#function wfl_fmt_next_release_version {
+#    local ver
+#
+#    ver=("$(wfl_fmt_version_tuple_from_tag)")
+#
+#    # Assert version is a 3-tuple.
+#    [[ ${#ver[@]} -eq 3 ]]
+#
+#    echo "${ver[1]}.${ver[2]}.${ver[3]}"
+#}
+#
+#function wfl_fmt_next_release_tag {
+#    echo "v$(wfl_fmt_next_release_versoin)"
+#}
+#
+#function wfl_fmt_version_tuple_from_tag {
+#    local tag="$1"
+#
+#    if ! [[ "$tag" =~ ^v([0-9]\+)\.([0-9]\+)\.([0-9]\+)$ ]]
+#    then
+#        wfl_die "tag '$tag' is ill-formed"
+#    fi
+#
+#    echo "${match[@]}"
+#}
+#
+#function main {
+#    local wfl_git_dir=
+#    local merge_status=0
+#
+#    wfl_parse_args "$@"
+#
+#    wfl_git_dir=$(git rev-parse --git-dir)
+#    wfl_check_tree_is_clean
+#    cmd_tag
+#}
+#
+#main "$@"
