@@ -1,0 +1,19 @@
+#!/bin/sh
+
+set -eu
+
+prog_name=$(basename "$0")
+
+if [ $# -ne 1 ]
+then
+    echo >&2 "$prog_name: usage error: this script takes no arguments"
+    exit 1
+fi
+
+if [ -e version-dist ]
+then
+    exit 0
+fi
+
+if git describe | sed -nr -e '
+    1s|v([0-9]+\.[0-9]+\.[0-9]
