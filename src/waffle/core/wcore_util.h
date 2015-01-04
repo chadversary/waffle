@@ -49,6 +49,32 @@
             return 0;                                                   \
     }
 
+/// @brief Addition that detects arithmetic overflow.
+///
+/// If the addition would result in overflow, then return false and do not
+/// update @a res.
+bool
+wcore_add_size(size_t *res, size_t x, size_t y);
+
+/// @brief In-place variant of wcore_add_size().
+static inline bool
+wcore_iadd_size(size_t *x, size_t y) {
+    return wcore_add_size(x, *x, y);
+}
+
+/// @brief Multiplication that detects arithmetic overflow.
+///
+/// If the multiplication would result in overflow, then return false and do
+/// not update @a res.
+bool
+wcore_mul_size(size_t *res, size_t x, size_t y);
+
+/// @brief In-place variant of wcore_mul_size().
+static inline bool
+wcore_imul_size(size_t *x, size_t y) {
+    return wcore_mul_size(x, *x, y);
+}
+
 /// @brief Wrapper around malloc() that emits error if allocation fails.
 void*
 wcore_malloc(size_t size);
