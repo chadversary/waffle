@@ -167,7 +167,7 @@ choose_real_config(struct wegl_display *dpy,
         // According to the EGL 1.4 spec Table 3.4, the default value of
         // EGL_SURFACE_BIT is EGL_WINDOW_BIT.  Explicitly set the default here for
         // the sake of self-documentation.
-        EGL_SURFACE_TYPE,           EGL_WINDOW_BIT,
+        EGL_SURFACE_TYPE,           EGL_PBUFFER_BIT,
         EGL_NONE,
     };
 
