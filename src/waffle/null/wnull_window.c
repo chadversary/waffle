@@ -233,6 +233,7 @@ wnull_window_create(struct wcore_platform *wc_plat,
             break;
     }
     window->param.egl_display = dpy->wegl.egl;
+    window->param.has_dma_buf_import_modifiers = dpy->wegl.EXT_image_dma_buf_import_modifiers;
 
     struct wgbm_platform *plat = wgbm_platform(wegl_platform(wc_plat));
 #define ASSIGN(type, name, args) window->func.name = plat->name;

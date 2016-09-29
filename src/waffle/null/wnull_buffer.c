@@ -164,7 +164,7 @@ slbuf_get_image(struct slbuf *self)
         if (fd < 0)
             goto done;
 
-        const EGLint attr[] = {
+        EGLint attr[17] = {
             EGL_WIDTH, self->p->width,
             EGL_HEIGHT, self->p->height,
             EGL_LINUX_DRM_FOURCC_EXT, slbuf_drm_format(self),
@@ -173,6 +173,18 @@ slbuf_get_image(struct slbuf *self)
             EGL_DMA_BUF_PLANE0_PITCH_EXT, slbuf_stride(self),
             EGL_NONE,
         };
+
+        if (self->p->has_dma_buf_import_modifiers) {
+            struct gbm_bo *bo = slbuf_get_bo(self);
+            if (bo) {
+                uint64_t modifier = self->f->gbm_bo_get_format_modifier(bo);
+                attr[12] = EGL_LINUX_DRM_PLANE0_MODIFIER0_EXT;
+                attr[13] = (uint32_t)(modifier & 0xffffffff);
+                attr[14] = EGL_LINUX_DRM_PLANE0_MODIFIER1_EXT;
+                attr[15] = (uint32_t)(modifier >> 32);
+                attr[16] = EGL_NONE;
+            }
+        }
 
         self->image = self->f->eglCreateImageKHR(self->p->egl_display,
                                                  EGL_NO_CONTEXT,

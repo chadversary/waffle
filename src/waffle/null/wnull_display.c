@@ -236,6 +236,7 @@ wnull_display_connect(struct wcore_platform *wc_plat,
     self->param.color = true;
     self->param.gbm_device = self->drm->gbm_device;
     self->param.egl_display = self->wegl.egl;
+    self->param.has_dma_buf_import_modifiers = self->wegl.EXT_image_dma_buf_import_modifiers;
 
 #define ASSIGN(type, name, args) self->func.name = plat->name;
     GBM_FUNCTIONS(ASSIGN);

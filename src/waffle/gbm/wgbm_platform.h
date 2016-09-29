@@ -49,6 +49,7 @@
     f(uint32_t            , gbm_bo_get_height            , (struct gbm_bo *bo)) \
     f(uint32_t            , gbm_bo_get_stride            , (struct gbm_bo *bo)) \
     f(uint32_t            , gbm_bo_get_format            , (struct gbm_bo *bo)) \
+    f(uint64_t            , gbm_bo_get_format_modifier   , (struct gbm_bo *bo)) \
     f(union gbm_bo_handle , gbm_bo_get_handle            , (struct gbm_bo *bo)) \
     f(struct gbm_device * , gbm_bo_get_device            , (struct gbm_bo *bo))
 

@@ -39,6 +39,7 @@ struct wegl_display {
     EGLDisplay egl;
     bool KHR_create_context;
     bool EXT_image_dma_buf_import;
+    bool EXT_image_dma_buf_import_modifiers;
 };
 
 DEFINE_CONTAINER_CAST_FUNC(wegl_display,

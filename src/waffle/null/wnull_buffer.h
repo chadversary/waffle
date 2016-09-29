@@ -16,6 +16,15 @@
 f(EGLImageKHR, eglCreateImageKHR , (EGLDisplay dpy, EGLContext ctx, EGLenum target, EGLClientBuffer buffer, const EGLint *attrib_list)) \
 f(EGLBoolean , eglDestroyImageKHR, (EGLDisplay dpy, EGLImageKHR image)) \
 
+#if !defined (EGL_LINUX_DRM_PLANE0_MODIFIER0_EXT)
+#define EGL_LINUX_DRM_PLANE0_MODIFIER0_EXT 0x3286
+#define EGL_LINUX_DRM_PLANE0_MODIFIER1_EXT 0x3287
+#define EGL_LINUX_DRM_PLANE1_MODIFIER0_EXT 0x3288
+#define EGL_LINUX_DRM_PLANE1_MODIFIER1_EXT 0x3289
+#define EGL_LINUX_DRM_PLANE2_MODIFIER0_EXT 0x328a
+#define EGL_LINUX_DRM_PLANE2_MODIFIER1_EXT 0x328b
+#endif
+
 
 struct slbuf_func {
 #define DECLARE(type, name, args) type (*name) args;
@@ -36,6 +45,7 @@ struct slbuf_param {
     uint32_t gbm_flags;
 
     EGLDisplay egl_display;
+    bool has_dma_buf_import_modifiers;
 };
 
 struct wnull_display;
