@@ -111,6 +111,7 @@ wegl_platform_init(struct wegl_platform *self)
 
     OPTIONAL_EGL_SYMBOL(eglCreateImageKHR);
     OPTIONAL_EGL_SYMBOL(eglDestroyImageKHR);
+    OPTIONAL_EGL_SYMBOL(eglImageFlushExternalEXT);
 
 #undef OPTIONAL_EGL_SYMBOL
 #undef RETRIEVE_EGL_SYMBOL

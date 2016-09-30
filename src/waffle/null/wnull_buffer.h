@@ -15,6 +15,7 @@
 #define EGL_FUNCTIONS(f) \
 f(EGLImageKHR, eglCreateImageKHR , (EGLDisplay dpy, EGLContext ctx, EGLenum target, EGLClientBuffer buffer, const EGLint *attrib_list)) \
 f(EGLBoolean , eglDestroyImageKHR, (EGLDisplay dpy, EGLImageKHR image)) \
+f(EGLBoolean , eglImageFlushExternalEXT, (EGLDisplay dpy, EGLImageKHR image, const EGLint *attrib_list)) \
 
 #if !defined (EGL_LINUX_DRM_PLANE0_MODIFIER0_EXT)
 #define EGL_LINUX_DRM_PLANE0_MODIFIER0_EXT 0x3286
@@ -82,6 +83,9 @@ slbuf_finish(struct slbuf *self);
 
 void
 slbuf_flush(struct slbuf *self);
+
+bool
+slbuf_flush_external(struct slbuf *self);
 
 bool
 slbuf_get_drmfb(struct slbuf *self, uint32_t *fb);

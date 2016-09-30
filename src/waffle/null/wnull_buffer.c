@@ -331,6 +331,16 @@ slbuf_flush(struct slbuf *self)
         self->f->glFlush();
 }
 
+bool
+slbuf_flush_external(struct slbuf *self)
+{
+    if (!self->f->eglImageFlushExternalEXT)
+        return false;
+    const EGLint attrs[] = { EGL_NONE };
+    return self->f->eglImageFlushExternalEXT(self->p->egl_display,
+                                             self->image, attrs);
+}
+
 static GLuint
 shader(struct slbuf_func *f, GLenum type, const char *src)
 {

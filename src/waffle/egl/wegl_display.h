@@ -40,6 +40,7 @@ struct wegl_display {
     bool KHR_create_context;
     bool EXT_image_dma_buf_import;
     bool EXT_image_dma_buf_import_modifiers;
+    bool EXT_image_flush_external;
 };
 
 DEFINE_CONTAINER_CAST_FUNC(wegl_display,

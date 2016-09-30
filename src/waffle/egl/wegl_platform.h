@@ -72,6 +72,7 @@ struct wegl_platform {
 
     EGLImageKHR (*eglCreateImageKHR) (EGLDisplay dpy, EGLContext ctx, EGLenum target, EGLClientBuffer buffer, const EGLint *attrib_list);
     EGLBoolean (*eglDestroyImageKHR)(EGLDisplay dpy, EGLImageKHR image);
+    EGLBoolean (*eglImageFlushExternalEXT)(EGLDisplay dpy, EGLImageKHR image, const EGLint *attrib_list);
 };
 
 DEFINE_CONTAINER_CAST_FUNC(wegl_platform,

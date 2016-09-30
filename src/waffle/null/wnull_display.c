@@ -528,6 +528,13 @@ wnull_display_present_buffer(struct wnull_display *self,
         }
     }
 
+    if (self->wegl.EXT_image_flush_external) {
+        if (!slbuf_flush_external(show)) {
+            prt("external flush failed\n");
+            return false;
+        }
+    }
+
     slbuf_finish(show);
 
     uint32_t fb;
