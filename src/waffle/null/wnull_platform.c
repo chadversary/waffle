@@ -43,6 +43,9 @@ wnull_platform_create(void)
         return NULL;
     }
 
+    // This platform never creates an EGLSurface.
+    self->wgbm.wegl.egl_surface_type_mask = 0;
+
     setenv("EGL_PLATFORM", "surfaceless", true);
 
     self->wgbm.wegl.wcore.vtbl = &wnull_platform_vtbl;
