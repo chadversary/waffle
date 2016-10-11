@@ -47,7 +47,7 @@ endif()
 if(waffle_on_linux)
     if(NOT waffle_has_glx AND NOT waffle_has_wayland AND
        NOT waffle_has_x11_egl AND NOT waffle_has_gbm AND
-       NOT waffle_has_nacl)
+       NOT waffle_has_nacl AND NOT waffle_has_null)
         message(FATAL_ERROR
                 "Must enable at least one of: "
                 "waffle_has_glx, waffle_has_wayland, "
